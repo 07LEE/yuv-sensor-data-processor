@@ -1,4 +1,4 @@
-"""Main entry point script for YUV data processing, batch frame extraction, and verification."""
+"""Main entry point script for YUV data processing, batch frame extraction, and synchronized dataset generation."""
 
 import sys
 import json
@@ -6,9 +6,8 @@ import argparse
 from pathlib import Path
 from PIL import Image
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-
-from src.data_loader import SessionDataLoader
+from yuv_sensor.data_loader import SessionDataLoader
+from yuv_sensor.data_processor import DataProcessor
 
 
 def main():
@@ -19,6 +18,7 @@ def main():
     parser.add_argument("--format", type=str, choices=["jpg", "png"], default="jpg", help="Output image format")
     parser.add_argument("--undistort", action="store_true", default=False, help="Apply lens distortion correction")
     parser.add_argument("--max_frames", type=int, default=None, help="Maximum number of frames to extract")
+    parser.add_argument("--process_sync", action="store_true", default=True, help="Generate synchronized_dataset.json mapping frames to IMU and exposure data")
     args = parser.parse_args()
 
     session_path = Path(args.session_dir)
@@ -36,6 +36,13 @@ def main():
     if total_frames == 0:
         print("No frames found in session.")
         return
+
+    # Process & export synchronized dataset JSON if enabled
+    if args.process_sync:
+        print("\nGenerating synchronized frame-to-IMU dataset...")
+        processor = DataProcessor(loader)
+        sync_file = processor.export_synchronized_dataset()
+        print(f"  Exported synchronized dataset to: {sync_file}")
 
     # Set default session-relative output directory if not explicitly specified
     if args.output_dir is None:

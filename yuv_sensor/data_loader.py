@@ -6,8 +6,8 @@ from typing import Dict, Any, List, Optional, Tuple
 import numpy as np
 import pandas as pd
 
-from src.yuv_decoder import decode_yuv420_888
-from src.camera_calib import CameraCalibration
+from yuv_sensor.yuv_decoder import decode_yuv420_888
+from yuv_sensor.camera_calib import CameraCalibration
 
 
 class SessionDataLoader:
