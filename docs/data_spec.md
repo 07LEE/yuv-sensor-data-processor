@@ -1,6 +1,7 @@
 # Capture Data Session Specification and Processing Directive
 
 ## 1. Overview and Data Summary
+
 This session contains raw sensor data captured via mobile_sensor_logger for 3D Reconstruction, Visual SLAM, and Gaussian Splatting applications. Instead of compressed video or JPEG files, uncompressed raw YUV binary files and dense sensor logs are preserved to support sensor fusion and accurate 3D reconstruction.
 
 ## 2. Session Data Directory Structure and File Details
@@ -28,6 +29,7 @@ Columns: timestamp_ns, sensor, x, y, z (where sensor is accel or gyro)
 Pre-processed dataset mapping each frame timestamp to matched exposure settings and inter-frame IMU samples.
 
 ## 3. Mandatory Processing Directives
+
 - YUV Decoding: Convert to RGB by reflecting chroma_layout (planar, semi_planar_uv, semi_planar_vu) and row strides (luma_row_stride, chroma_row_stride) with padding bytes recorded in frames.csv.
 - Image Rotation and Undistortion: Apply sensor_orientation rotation angle from session.json and perform lens distortion correction using intrinsics and distortion parameters.
 - Timestamp Synchronization: Use nanosecond timestamp (timestamp_ns) as the primary key when joining camera frames, IMU, and exposure metadata.

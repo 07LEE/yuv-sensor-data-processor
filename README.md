@@ -14,22 +14,18 @@ pip install -e .
 ## 2. Quick Start
 
 ### Extract frames and synchronized metadata
+
 ```bash
 yuv-sensor --session_dir data/session_419864820
 ```
 
 ### Export to COLMAP format with IMU-based pose priors
+
 ```bash
 yuv-sensor --session_dir data/session_419864820 --export_colmap --colmap_output_dir output/colmap
 ```
 
-Then run COLMAP:
-```bash
-cd output/colmap
-colmap feature_extractor --database_path database.db --image_path images
-colmap sequential_matcher --database_path database.db
-colmap mapper --database_path database.db --image_path images --output_path sparse
-```
+For the full COLMAP walkthrough (feature extraction, matching, mapping, troubleshooting), see [COLMAP Workflow](docs/colmap_workflow.md).
 
 ## 3. CLI Reference
 
@@ -45,71 +41,26 @@ Options:
   --process_sync                 Generate synchronized_dataset.json (default: True)
   --export_colmap                Export in COLMAP format with IMU pose priors
   --colmap_output_dir STR        Output directory for COLMAP workspace (default: session_dir/colmap)
+  --export_kalibr                Export Kalibr camera-IMU calibration input (images + camchain.yaml + imu.csv)
+  --kalibr_output_dir STR        Output directory for Kalibr export (default: session_dir/kalibr)
+  --trim_imu_static {start,end,both}
+                                  Trim motion off a static IMU-only capture (for Allan variance / Kalibr imu.yaml)
+  --imu_trim_output_dir STR      Output directory for --trim_imu_static (default: session_dir/imu_trimmed)
 ```
 
-## 4. Python API Usage
-
-### Basic frame extraction and metadata
-```python
-from yuv_sensor import SessionDataLoader, DataProcessor
-
-loader = SessionDataLoader("data/session_419864820")
-
-# Decode frame into RGB array with undistortion
-rgb_frame = loader.get_decoded_frame(0, apply_undistort=True, apply_rotation=True)
-
-# Query synchronized IMU samples around frame timestamp
-imu_data = loader.get_synchronized_imu(timestamp_ns=419865219890714, time_window_ms=50.0)
-
-# Export synchronized frame-to-IMU-to-exposure mapping
-processor = DataProcessor(loader)
-processor.export_synchronized_dataset()
-```
-
-### Export to COLMAP format
-```python
-from yuv_sensor import SessionDataLoader, ColmapExporter
-
-loader = SessionDataLoader("data/session_419864820")
-exporter = ColmapExporter(loader)
-
-result = exporter.export_to_directory(
-    output_dir="output/colmap",
-    extract_images=True,
-    undistort=False,
-    image_format="jpg"
-)
-
-print(f"Images: {result['images_dir']}")
-print(f"Camera config: {result['cameras_txt']}")
-print(f"Image list with poses: {result['images_txt']}")
-```
-
-### Estimate camera pose from IMU
-```python
-from yuv_sensor import SessionDataLoader, PoseEstimator
-
-loader = SessionDataLoader("data/session_419864820")
-estimator = PoseEstimator()
-
-trajectory = estimator.estimate_trajectory(loader.imu_df, loader.frames_df)
-
-# trajectory[frame_idx] contains: position, rotation_matrix, quaternion, velocity
-for idx, pose in trajectory.items():
-    print(f"Frame {idx}: pos={pose['position']}, rotation={pose['rotation_matrix']}")
-```
-
-## 5. Core Features
+## 4. Core Features
 
 - **YUV Decoding**: Decode raw YUV_420_888 frames using layout and stride metadata from frames.csv
 - **Camera Calibration**: Apply lens distortion correction and sensor orientation rotation
 - **Multi-sensor Synchronization**: Align camera frames, IMU (accel/gyro), and exposure metadata by nanosecond timestamps
 - **IMU-based Pose Estimation**: Integrate accelerometer and gyroscope data to estimate initial camera trajectory
 - **COLMAP Integration**: Export images and camera parameters in COLMAP-compatible format with pose priors for 3D reconstruction
+- **Kalibr Export**: Export images, camchain.yaml, and imu.csv as input for Kalibr camera-IMU calibration
+- **Static IMU Trim**: Auto-trim motion off the edges of a static IMU capture for Allan variance analysis
 
-## 6. Architecture
+## 5. Architecture
 
-```
+```text
 SessionDataLoader
   ├─ frames.csv (YUV frame metadata)
   ├─ imu.csv (accelerometer & gyroscope)
@@ -127,21 +78,19 @@ ColmapExporter
   ├─ images.txt (images + poses)
   ├─ pose_priors.json (IMU trajectory reference)
   └─ images/ (extracted RGB frames)
+
+KalibrExporter
+  ├─ camchain.yaml (seed intrinsics)
+  ├─ imu.csv (copied as-is)
+  └─ images/ (extracted RGB frames, not undistorted)
+
+auto_trim_static_imu
+  └─ Trims motion off a static IMU capture (imu_trimmed/imu.csv + trim_report.json)
 ```
-
-## 7. Workflow: Mobile Scan → COLMAP 3D Reconstruction
-
-1. **Mobile App**: Captures image sequence + IMU/exposure logs (scans object/room)
-2. **SessionDataLoader**: Loads raw YUV frames and metadata
-3. **PoseEstimator**: Estimates camera trajectory from IMU (provides rotation hints)
-4. **ColmapExporter**: Generates COLMAP workspace with images, intrinsics, and pose priors
-5. **COLMAP**: Refines poses via feature matching and bundle adjustment
-6. **Output**: Sparse point cloud + camera poses (in sparse/0/model directory)
-
-**Note**: IMU poses are initialization hints only; COLMAP's feature-based SfM provides the authoritative geometry.
 
 ## Documentation
 
 - [Data Specification](docs/data_spec.md): Session directory structure and metadata formats
 - [COLMAP Workflow](docs/colmap_workflow.md): End-to-end example with COLMAP integration
+- [Kalibr Workflow](docs/kalibr_workflow.md): End-to-end example for Kalibr camera-IMU calibration
 - [API Reference](docs/api_reference.md): Detailed module and class documentation

@@ -9,6 +9,8 @@ from PIL import Image
 from yuv_sensor.data_loader import SessionDataLoader
 from yuv_sensor.data_processor import DataProcessor
 from yuv_sensor.colmap_exporter import ColmapExporter
+from yuv_sensor.kalibr_exporter import KalibrExporter
+from yuv_sensor.imu_trim import auto_trim_static_imu
 
 
 def main():
@@ -22,6 +24,10 @@ def main():
     parser.add_argument("--process_sync", action="store_true", default=True, help="Generate synchronized_dataset.json mapping frames to IMU and exposure data")
     parser.add_argument("--export_colmap", action="store_true", default=False, help="Export data in COLMAP format with IMU-based pose priors")
     parser.add_argument("--colmap_output_dir", type=str, default=None, help="Directory for COLMAP export (defaults to session_dir/colmap)")
+    parser.add_argument("--export_kalibr", action="store_true", default=False, help="Export data as Kalibr camera-IMU calibration input (images + camchain.yaml + imu.csv)")
+    parser.add_argument("--kalibr_output_dir", type=str, default=None, help="Directory for Kalibr export (defaults to session_dir/kalibr)")
+    parser.add_argument("--trim_imu_static", type=str, choices=["start", "end", "both"], default=None, help="Trim motion off a static IMU-only capture (for Allan variance / Kalibr imu.yaml) instead of any other action; writes trimmed imu.csv, imu_raw.csv, and a trim report")
+    parser.add_argument("--imu_trim_output_dir", type=str, default=None, help="Directory for --trim_imu_static output (defaults to session_dir/imu_trimmed)")
     args = parser.parse_args()
 
     session_path = Path(args.session_dir)
@@ -36,8 +42,65 @@ def main():
     print(f"  Sensor Orientation: {loader.session_config.get('sensor_orientation')} deg")
     print(f"  Total Frames in session: {total_frames}")
 
+    # Trim a static IMU-only capture, independent of frame count
+    if args.trim_imu_static:
+        print(f"\nTrimming static IMU capture (ends={args.trim_imu_static})...")
+        if loader.imu_df is None:
+            print("No imu.csv in this session.")
+            return
+
+        result = auto_trim_static_imu(loader.imu_df, ends=args.trim_imu_static)
+        report = result["report"]
+
+        if args.imu_trim_output_dir is None:
+            trim_dir = session_path / "imu_trimmed"
+        else:
+            trim_dir = Path(args.imu_trim_output_dir)
+        trim_dir.mkdir(parents=True, exist_ok=True)
+
+        result["trimmed"].to_csv(trim_dir / "imu.csv", index=False)
+        loader.imu_df.to_csv(trim_dir / "imu_raw.csv", index=False)
+        with open(trim_dir / "trim_report.json", "w") as f:
+            json.dump(report, f, indent=2)
+
+        print(f"  baseline |accel|: {report['baseline_mag']:.4f} m/s^2")
+        if "start_cut_s" in report:
+            print(f"  start: cut {report['start_cut_s']:.0f}s")
+        if "end_cut_s" in report:
+            print(f"  end: cut {report['end_cut_s']:.0f}s")
+        print(f"  kept {report['kept_rows']} rows, dropped {report['dropped_rows']}")
+        print(f"\nTrimmed output: {trim_dir}")
+        return
+
     if total_frames == 0:
         print("No frames found in session.")
+        return
+
+    # Export as Kalibr camera-IMU calibration input if requested
+    if args.export_kalibr:
+        print("\nExporting Kalibr camera-IMU calibration input...")
+        if args.kalibr_output_dir is None:
+            kalibr_dir = session_path / "kalibr"
+        else:
+            kalibr_dir = Path(args.kalibr_output_dir)
+
+        exporter = KalibrExporter(loader)
+        export_result = exporter.export_to_directory(
+            kalibr_dir,
+            extract_images=True,
+            image_format="png",
+            max_frames=args.max_frames
+        )
+
+        print(f"\nKalibr export complete:")
+        print(f"  Output directory: {kalibr_dir}")
+        print(f"  camchain.yaml: {export_result['camchain_yaml']}")
+        print(f"  imu.csv: {export_result['imu_csv']}")
+        print(f"  Images: {export_result['images_dir']}")
+        print(f"\nStill needed before kalibr_calibrate_imu_camera can run:")
+        print(f"  - a target.yaml for the physical calibration board")
+        print(f"  - an imu.yaml (see --trim_imu_static on a separate static capture)")
+        print(f"  - packing images/ + imu.csv into a rosbag")
         return
 
     # Export to COLMAP format if requested

@@ -30,6 +30,7 @@ Output: Sparse Point Cloud + Refined Camera Poses
 
 - **yuv_sensor** installed: `pip install -e .`
 - **COLMAP** installed: See [COLMAP documentation](https://colmap.github.io/)
+
   ```bash
   # macOS
   brew install colmap
@@ -54,6 +55,7 @@ yuv-sensor --session_dir data/session_419864820 \
 ```
 
 This generates:
+
 - `output/colmap/images/` — RGB frames (named by timestamp)
 - `output/colmap/cameras.txt` — Camera intrinsics (PINHOLE model)
 - `output/colmap/images.txt` — Image list with IMU-estimated poses
@@ -95,6 +97,7 @@ colmap feature_extractor \
 ```
 
 **Parameters**:
+
 - `--database_path database.db` — COLMAP database file
 - `--image_path images` — Directory with extracted RGB images
 - `--ImageReader.camera_model PINHOLE` — Match our camera model
@@ -116,6 +119,7 @@ colmap sequential_matcher \
 **Why sequential matching?**: Since images follow a camera trajectory (sequential scan), sequential matching is faster than exhaustive matching.
 
 **Alternative for small datasets** (< 100 images, dense sampling):
+
 ```bash
 colmap exhaustive_matcher --database_path database.db
 ```
@@ -125,6 +129,7 @@ colmap exhaustive_matcher --database_path database.db
 ## Step 4: Incremental Mapper (Main SfM)
 
 Run the incremental mapper, which:
+
 1. Initializes with two best-matched images
 2. Incrementally adds more images
 3. Refines camera poses via bundle adjustment
@@ -139,10 +144,12 @@ colmap mapper \
 ```
 
 **Parameters**:
+
 - `--output_path sparse` — Directory for output models
 - `--Mapper.ignore_watermark 1` — Skip watermark check
 
 **Expected output**:
+
 - `sparse/0/` — Model directory with:
   - `images.txt` — Refined camera poses (xyzw quaternion format)
   - `points3D.txt` — 3D point cloud
@@ -176,6 +183,7 @@ colmap stereo_fusion \
 ```
 
 This produces:
+
 - `dense/fused.ply` — Dense point cloud (millions of points)
 
 ## Troubleshooting
@@ -183,11 +191,13 @@ This produces:
 ### "Not enough matches" / Mapper fails to initialize
 
 **Causes**:
+
 - Images too different (large baseline, rotation)
 - Insufficient visual overlap
 - Low image quality or motion blur
 
 **Solutions**:
+
 1. Check pose_priors.json — do poses look reasonable?
 2. Verify images are in focus and well-lit
 3. Try exhaustive matching instead of sequential
@@ -198,9 +208,11 @@ This produces:
 **Cause**: Camera intrinsics in cameras.txt might be slightly off.
 
 **Solution**:
+
 1. Double-check session.json intrinsics
 2. Verify image resolution matches (width/height in cameras.txt)
 3. Let COLMAP estimate intrinsics:
+
    ```bash
    colmap bundle_adjuster --refine_principal_point 1 --input_path sparse/0
    ```
@@ -208,6 +220,7 @@ This produces:
 ### Output looks distorted or wrong rotation
 
 **Check**:
+
 1. Session orientation: Verify `sensor_orientation` in session.json matches device mounting
 2. Image undistortion: Try `--undistort` flag in yuv-sensor export if not already applied
 3. Pose priors: Inspect `pose_priors.json` — poses should show smooth trajectory
@@ -215,6 +228,7 @@ This produces:
 ### Out of memory
 
 **If dataset is large** (> 1000 images):
+
 1. Reduce image resolution (save as smaller JPEGs)
 2. Use `--Mapper.abs_pose_max_error 10` to be less strict on outliers
 3. Process in batches (split session into sub-scans)
@@ -260,7 +274,7 @@ colmap gui
 ## Performance Benchmarks
 
 | Dataset Size | Processing Time | Output Size |
-|--------------|-----------------|-------------|
+| -------------- | ----------------- | ------------- |
 | 50 images (object) | 5-10s | 10K-50K points |
 | 200 images (room) | 30-60s | 100K-500K points |
 | 1000 images (indoor scene) | 3-10 min | 1M+ points |
