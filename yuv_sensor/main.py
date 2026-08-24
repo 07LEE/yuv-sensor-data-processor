@@ -8,6 +8,7 @@ from PIL import Image
 
 from yuv_sensor.data_loader import SessionDataLoader
 from yuv_sensor.data_processor import DataProcessor
+from yuv_sensor.colmap_exporter import ColmapExporter
 
 
 def main():
@@ -19,6 +20,8 @@ def main():
     parser.add_argument("--undistort", action="store_true", default=False, help="Apply lens distortion correction")
     parser.add_argument("--max_frames", type=int, default=None, help="Maximum number of frames to extract")
     parser.add_argument("--process_sync", action="store_true", default=True, help="Generate synchronized_dataset.json mapping frames to IMU and exposure data")
+    parser.add_argument("--export_colmap", action="store_true", default=False, help="Export data in COLMAP format with IMU-based pose priors")
+    parser.add_argument("--colmap_output_dir", type=str, default=None, help="Directory for COLMAP export (defaults to session_dir/colmap)")
     args = parser.parse_args()
 
     session_path = Path(args.session_dir)
@@ -35,6 +38,36 @@ def main():
 
     if total_frames == 0:
         print("No frames found in session.")
+        return
+
+    # Export to COLMAP format if requested
+    if args.export_colmap:
+        print("\nExporting to COLMAP format with IMU-based pose priors...")
+        if args.colmap_output_dir is None:
+            colmap_dir = session_path / "colmap"
+        else:
+            colmap_dir = Path(args.colmap_output_dir)
+
+        exporter = ColmapExporter(loader)
+        export_result = exporter.export_to_directory(
+            colmap_dir,
+            extract_images=True,
+            undistort=args.undistort,
+            image_format=args.format,
+            image_quality=92 if args.format == "jpg" else 100
+        )
+
+        print(f"\nCOLMAP export complete:")
+        print(f"  Output directory: {colmap_dir}")
+        print(f"  Cameras config: {export_result['cameras_txt']}")
+        print(f"  Images list: {export_result['images_txt']}")
+        print(f"  Pose priors: {export_result['pose_priors_json']}")
+        print(f"  Images: {export_result['images_dir']}")
+        print(f"\nNext steps:")
+        print(f"  cd {colmap_dir}")
+        print(f"  colmap feature_extractor --database_path database.db --image_path images")
+        print(f"  colmap sequential_matcher --database_path database.db")
+        print(f"  colmap mapper --database_path database.db --image_path images --output_path sparse")
         return
 
     # Process & export synchronized dataset JSON if enabled
@@ -59,7 +92,7 @@ def main():
     for idx in range(limit):
         row = loader.frames_df.iloc[idx]
         timestamp_ns = row["timestamp_ns"]
-        
+
         rgb_frame = loader.get_decoded_frame(idx, apply_undistort=args.undistort, apply_rotation=True)
 
         file_name = f"{timestamp_ns}.{args.format}"
