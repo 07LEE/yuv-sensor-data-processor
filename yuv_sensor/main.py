@@ -1,16 +1,16 @@
 """Main entry point script for YUV data processing, batch frame extraction, and synchronized dataset generation."""
 
 import sys
-import json
 import argparse
 from pathlib import Path
-from PIL import Image
 
 from yuv_sensor.data_loader import SessionDataLoader
 from yuv_sensor.data_processor import DataProcessor
 from yuv_sensor.colmap_exporter import ColmapExporter
 from yuv_sensor.kalibr_exporter import KalibrExporter
+from yuv_sensor.frame_extractor import extract_frames
 from yuv_sensor.imu_trim import auto_trim_static_imu
+from yuv_sensor.io_utils import write_json
 
 
 def main():
@@ -64,8 +64,7 @@ def main():
 
         result["trimmed"].to_csv(trim_dir / "imu.csv", index=False)
         loader.imu_df.to_csv(trim_dir / "imu_raw.csv", index=False)
-        with open(trim_dir / "trim_report.json", "w") as f:
-            json.dump(report, f, indent=2)
+        write_json(trim_dir / "trim_report.json", report)
 
         print(f"  baseline |accel|: {report['baseline_mag']:.4f} m/s^2")
         if "start_cut_s" in report:
@@ -158,19 +157,14 @@ def main():
 
     print(f"\nExtracting {limit} / {total_frames} frames to: {out_dir} (Format: {args.format.upper()}, Undistort: {args.undistort})...")
 
-    for idx in range(limit):
-        row = loader.frames_df.iloc[idx]
-        timestamp_ns = row["timestamp_ns"]
-
-        rgb_frame = loader.get_decoded_frame(idx, apply_undistort=args.undistort, apply_rotation=True)
-
-        file_name = f"{timestamp_ns}.{args.format}"
-        save_path = out_dir / file_name
-        img = Image.fromarray(rgb_frame)
-        img.save(save_path, quality=92 if args.format == "jpg" else 100)
-
-        if (idx + 1) % 50 == 0 or (idx + 1) == limit:
-            print(f"  Progress: {idx + 1} / {limit} frames extracted...")
+    extract_frames(
+        loader,
+        out_dir,
+        args.format,
+        filename_for_row=lambda idx, row, fmt: f"{int(row['timestamp_ns'])}.{fmt}",
+        undistort=args.undistort,
+        max_frames=args.max_frames,
+    )
 
     # Write extraction_info.json metadata file into the output directory
     info_metadata = {
@@ -185,8 +179,7 @@ def main():
     }
 
     info_path = out_dir / "extraction_info.json"
-    with open(info_path, "w", encoding="utf-8") as f:
-        json.dump(info_metadata, f, indent=2)
+    write_json(info_path, info_metadata)
 
     print(f"Saved extraction metadata to: {info_path}")
     print(f"\nSuccessfully extracted {limit} frames into: {out_dir}")

@@ -1,10 +1,11 @@
 """Exporter for Kalibr camera-IMU calibration input (images + camchain.yaml + imu.csv)."""
 
-import json
 from pathlib import Path
 from typing import Dict, Optional
 
 from yuv_sensor.data_loader import SessionDataLoader
+from yuv_sensor.frame_extractor import extract_frames
+from yuv_sensor.io_utils import write_json
 
 
 class KalibrExporter:
@@ -147,21 +148,13 @@ class KalibrExporter:
 
     def _extract_images(self, images_dir: Path, image_format: str, max_frames: Optional[int]) -> None:
         """Extract raw (non-undistorted) images from YUV frames to images_dir."""
-        from PIL import Image
-
-        total = len(self.loader.frames_df)
-        limit = total if max_frames is None else min(max_frames, total)
-
-        for idx in range(limit):
-            row = self.loader.frames_df.iloc[idx]
-            rgb = self.loader.get_decoded_frame(idx, apply_undistort=False, apply_rotation=True)
-
-            filename = row["filename"].replace(".yuv", f".{image_format}")
-            save_path = images_dir / filename
-            Image.fromarray(rgb).save(save_path)
-
-            if (idx + 1) % 50 == 0 or (idx + 1) == limit:
-                print(f"  Extracted images: {idx + 1} / {limit}")
+        extract_frames(
+            self.loader,
+            images_dir,
+            image_format,
+            undistort=False,
+            max_frames=max_frames,
+        )
 
     def _export_metadata_json(self, output_dir: Path, image_format: str) -> Path:
         """Export metadata about the Kalibr export."""
@@ -177,7 +170,6 @@ class KalibrExporter:
                     "distortion model from the raw frames.",
         }
 
-        with open(metadata_path, "w") as f:
-            json.dump(metadata, f, indent=2)
+        write_json(metadata_path, metadata)
 
         return metadata_path

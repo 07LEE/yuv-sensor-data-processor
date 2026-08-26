@@ -1,6 +1,5 @@
 """Exporter for COLMAP-compatible input format with camera poses from IMU."""
 
-import json
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 import numpy as np
@@ -8,6 +7,8 @@ import pandas as pd
 from scipy.spatial.transform import Rotation
 
 from yuv_sensor.data_loader import SessionDataLoader
+from yuv_sensor.frame_extractor import extract_frames
+from yuv_sensor.io_utils import write_json
 from yuv_sensor.pose_estimator import PoseEstimator
 
 
@@ -163,8 +164,7 @@ class ColmapExporter:
                 "velocity": pose["velocity"].tolist(),
             })
 
-        with open(pose_priors_path, "w") as f:
-            json.dump(priors, f, indent=2)
+        write_json(pose_priors_path, priors)
 
         return pose_priors_path
 
@@ -177,23 +177,13 @@ class ColmapExporter:
         image_quality: int
     ) -> None:
         """Extract images from YUV frames to images_dir."""
-        from PIL import Image
-
-        total = len(self.loader.frames_df)
-        for idx, frame_row in self.loader.frames_df.iterrows():
-            rgb = self.loader.get_decoded_frame(idx, apply_undistort=undistort, apply_rotation=True)
-
-            filename = frame_row["filename"].replace(".yuv", f".{image_format}")
-            save_path = images_dir / filename
-
-            img = Image.fromarray(rgb)
-            if image_format == "jpg":
-                img.save(save_path, quality=image_quality)
-            else:
-                img.save(save_path)
-
-            if (idx + 1) % 50 == 0 or (idx + 1) == total:
-                print(f"  Extracted images: {idx + 1} / {total}")
+        extract_frames(
+            self.loader,
+            images_dir,
+            image_format,
+            undistort=undistort,
+            quality=image_quality,
+        )
 
     def _export_metadata_json(self, output_dir: Path, undistort: bool, image_format: str) -> Path:
         """Export metadata about the COLMAP export."""
@@ -213,7 +203,6 @@ class ColmapExporter:
             ]
         }
 
-        with open(metadata_path, "w") as f:
-            json.dump(metadata, f, indent=2)
+        write_json(metadata_path, metadata)
 
         return metadata_path
