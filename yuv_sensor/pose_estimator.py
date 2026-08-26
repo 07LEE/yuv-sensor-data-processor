@@ -72,8 +72,11 @@ class PoseEstimator:
 
                 if len(accel_samples) > 0 and len(gyro_samples) > 0:
                     # Update rotation from gyro
+                    prev_gyro_ts = prev_timestamp_ns
                     for _, sample in gyro_samples.iterrows():
-                        dt = 1e-9  # Rough dt; better to use actual gyro sample interval
+                        sample_ts = int(sample["timestamp_ns"])
+                        dt = (sample_ts - prev_gyro_ts) * 1e-9
+                        prev_gyro_ts = sample_ts
                         omega = np.array([sample["x"], sample["y"], sample["z"]])
                         angle = np.linalg.norm(omega) * dt
                         if angle > 1e-8:
