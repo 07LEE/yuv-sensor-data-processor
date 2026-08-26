@@ -50,10 +50,16 @@ def _find_boundary_ns(
     max_sec = int(sec.max())
     bin_max = np.zeros(max_sec + 1)
     np.maximum.at(bin_max, sec, dev)
+    bin_count = np.zeros(max_sec + 1, dtype=np.int64)
+    np.add.at(bin_count, sec, 1)
+    bin_has_data = bin_count > 0
 
     settle_run = int(settle_run_s)
     for start in range(0, max_sec - settle_run + 2):
-        if np.all(bin_max[start:start + settle_run] <= threshold):
+        window = slice(start, start + settle_run)
+        # A second with no samples (sensor dropout) must not count as clean --
+        # bin_max defaults to 0.0 there, which would otherwise look spotless.
+        if np.all(bin_has_data[window]) and np.all(bin_max[window] <= threshold):
             return int((start + margin_s) * 1e9)
     return None
 
@@ -89,7 +95,7 @@ def auto_trim_static_imu(
     if ends not in ("start", "end", "both"):
         raise ValueError(f"ends must be 'start', 'end', or 'both', got {ends!r}")
 
-    accel = imu_df[imu_df["sensor"] == "accel"]
+    accel = imu_df[imu_df["sensor"] == "accel"].sort_values("timestamp_ns")
     if len(accel) == 0:
         raise ValueError("no accel rows in imu_df")
 
