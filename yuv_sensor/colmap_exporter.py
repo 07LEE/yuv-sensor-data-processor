@@ -113,7 +113,10 @@ class ColmapExporter:
         """Export images.txt in COLMAP format.
 
         Format: IMAGE_ID, QW, QX, QY, QZ, TX, TY, TZ, CAMERA_ID, IMAGE_NAME
-        where (qw, qx, qy, qz) is rotation quaternion in xyzw format.
+        where (QW, QX, QY, QZ, TX, TY, TZ) is the world-to-camera transform
+        COLMAP expects: R_cw (from the quaternion) and T = -R_cw @ C, with
+        C the camera center in world coordinates. PoseEstimator tracks the
+        camera-to-world rotation R_wc, so both must be inverted here.
         """
         images_path = output_dir / "images.txt"
 
@@ -129,9 +132,10 @@ class ColmapExporter:
                 filename = frame_row["filename"].replace(".yuv", ".jpg")
 
                 pose = trajectory[frame_idx]
-                q = pose["quaternion"]  # xyzw format
+                R_cw = pose["rotation_matrix"].T  # world-to-camera rotation
+                q = Rotation.from_matrix(R_cw).as_quat()  # xyzw format
                 qx, qy, qz, qw = q[0], q[1], q[2], q[3]
-                tx, ty, tz = pose["position"]
+                tx, ty, tz = -R_cw @ pose["position"]
 
                 f.write(f"{image_id} {qw:.6f} {qx:.6f} {qy:.6f} {qz:.6f} {tx:.6f} {ty:.6f} {tz:.6f} 1 {filename}\n")
                 f.write("# Image features (empty until COLMAP runs)\n")
