@@ -37,8 +37,8 @@ class PoseEstimator:
             return self._zero_trajectory(frames_df)
 
         trajectory = {}
-        accel_data = imu_df[imu_df["sensor"] == "accel"].copy().sort_values("timestamp_ns")
-        gyro_data = imu_df[imu_df["sensor"] == "gyro"].copy().sort_values("timestamp_ns")
+        accel_data = imu_df[imu_df["sensor"] == "accel"].sort_values("timestamp_ns")
+        gyro_data = imu_df[imu_df["sensor"] == "gyro"].sort_values("timestamp_ns")
 
         if accel_data.empty or gyro_data.empty:
             return self._zero_trajectory(frames_df)
@@ -51,6 +51,17 @@ class PoseEstimator:
         # Gravity vector in world frame
         g_world = np.array([0, 0, self.gravity])
 
+        # Pre-extract sorted numpy arrays once: frames_df/accel_data/gyro_data
+        # are each timestamp-ordered, so a frame-by-frame two-pointer walk
+        # visits every IMU sample at most once (O(N+M)) instead of rescanning
+        # the full accel/gyro tables per frame (O(N*M)).
+        accel_ts = accel_data["timestamp_ns"].to_numpy()
+        accel_xyz = accel_data[["x", "y", "z"]].to_numpy()
+        gyro_ts = gyro_data["timestamp_ns"].to_numpy()
+        gyro_xyz = gyro_data[["x", "y", "z"]].to_numpy()
+        n_accel = len(accel_ts)
+        n_gyro = len(gyro_ts)
+
         prev_timestamp_ns = None
         accel_idx = 0
         gyro_idx = 0
@@ -58,40 +69,39 @@ class PoseEstimator:
         for frame_idx, frame_row in frames_df.iterrows():
             frame_ts = int(frame_row["timestamp_ns"])
 
+            a_start = accel_idx
+            while accel_idx < n_accel and accel_ts[accel_idx] <= frame_ts:
+                accel_idx += 1
+            a_end = accel_idx
+
+            g_start = gyro_idx
+            while gyro_idx < n_gyro and gyro_ts[gyro_idx] <= frame_ts:
+                gyro_idx += 1
+            g_end = gyro_idx
+
             # Integrate IMU between frame timestamps
-            if prev_timestamp_ns is not None:
-                # Collect samples in this interval
-                accel_samples = accel_data[
-                    (accel_data["timestamp_ns"] > prev_timestamp_ns) &
-                    (accel_data["timestamp_ns"] <= frame_ts)
-                ]
-                gyro_samples = gyro_data[
-                    (gyro_data["timestamp_ns"] > prev_timestamp_ns) &
-                    (gyro_data["timestamp_ns"] <= frame_ts)
-                ]
+            if prev_timestamp_ns is not None and a_end > a_start and g_end > g_start:
+                # Update rotation from gyro
+                prev_gyro_ts = prev_timestamp_ns
+                for i in range(g_start, g_end):
+                    sample_ts = int(gyro_ts[i])
+                    dt = (sample_ts - prev_gyro_ts) * 1e-9
+                    prev_gyro_ts = sample_ts
+                    omega = gyro_xyz[i]
+                    angle = np.linalg.norm(omega) * dt
+                    if angle > 1e-8:
+                        axis = omega / np.linalg.norm(omega)
+                        dR = Rotation.from_rotvec(axis * angle).as_matrix()
+                        R_current = R_current @ dR
 
-                if len(accel_samples) > 0 and len(gyro_samples) > 0:
-                    # Update rotation from gyro
-                    prev_gyro_ts = prev_timestamp_ns
-                    for _, sample in gyro_samples.iterrows():
-                        sample_ts = int(sample["timestamp_ns"])
-                        dt = (sample_ts - prev_gyro_ts) * 1e-9
-                        prev_gyro_ts = sample_ts
-                        omega = np.array([sample["x"], sample["y"], sample["z"]])
-                        angle = np.linalg.norm(omega) * dt
-                        if angle > 1e-8:
-                            axis = omega / np.linalg.norm(omega)
-                            dR = Rotation.from_rotvec(axis * angle).as_matrix()
-                            R_current = R_current @ dR
+                # Update velocity and position from accel
+                accel_mean = accel_xyz[a_start:a_end].mean(axis=0)
+                accel_world = R_current @ accel_mean
+                accel_world -= g_world  # Remove gravity
 
-                    # Update velocity and position from accel
-                    accel_mean = accel_samples[["x", "y", "z"]].mean().values
-                    accel_world = R_current @ accel_mean
-                    accel_world -= g_world  # Remove gravity
-
-                    dt_s = (frame_ts - prev_timestamp_ns) * 1e-9
-                    v_current += accel_world * dt_s
-                    p_current += v_current * dt_s
+                dt_s = (frame_ts - prev_timestamp_ns) * 1e-9
+                v_current += accel_world * dt_s
+                p_current += v_current * dt_s
 
             trajectory[frame_idx] = {
                 "timestamp_ns": frame_ts,
