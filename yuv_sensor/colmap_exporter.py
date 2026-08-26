@@ -100,7 +100,7 @@ class ColmapExporter:
             f.write("# Number of cameras: 1\n")
 
             if intrinsics:
-                fx, fy, cx, cy = intrinsics
+                fx, fy, cx, cy = intrinsics[:4]
                 f.write(f"1 PINHOLE {int(width)} {int(height)} {fx} {fy} {cx} {cy}\n")
             else:
                 # Fallback: assume principal point at center, estimate focal length
