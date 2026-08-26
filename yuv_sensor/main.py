@@ -21,13 +21,16 @@ def main():
     parser.add_argument("--format", type=str, choices=["jpg", "png"], default="jpg", help="Output image format")
     parser.add_argument("--undistort", action="store_true", default=False, help="Apply lens distortion correction")
     parser.add_argument("--max_frames", type=int, default=None, help="Maximum number of frames to extract")
-    parser.add_argument("--process_sync", action="store_true", default=True, help="Generate synchronized_dataset.json mapping frames to IMU and exposure data")
-    parser.add_argument("--export_colmap", action="store_true", default=False, help="Export data in COLMAP format with IMU-based pose priors")
+    parser.add_argument("--process_sync", action="store_true", default=True, help="Generate synchronized_dataset.json mapping frames to IMU and exposure data (skipped by --export_colmap/--export_kalibr/--trim_imu_static, which are standalone actions)")
     parser.add_argument("--colmap_output_dir", type=str, default=None, help="Directory for COLMAP export (defaults to session_dir/colmap)")
-    parser.add_argument("--export_kalibr", action="store_true", default=False, help="Export data as Kalibr camera-IMU calibration input (images + camchain.yaml + imu.csv)")
     parser.add_argument("--kalibr_output_dir", type=str, default=None, help="Directory for Kalibr export (defaults to session_dir/kalibr)")
-    parser.add_argument("--trim_imu_static", type=str, choices=["start", "end", "both"], default=None, help="Trim motion off a static IMU-only capture (for Allan variance / Kalibr imu.yaml) instead of any other action; writes trimmed imu.csv, imu_raw.csv, and a trim report")
     parser.add_argument("--imu_trim_output_dir", type=str, default=None, help="Directory for --trim_imu_static output (defaults to session_dir/imu_trimmed)")
+
+    mode_group = parser.add_mutually_exclusive_group()
+    mode_group.add_argument("--export_colmap", action="store_true", default=False, help="Standalone action: export data in COLMAP format with IMU-based pose priors, skipping --process_sync and normal frame extraction")
+    mode_group.add_argument("--export_kalibr", action="store_true", default=False, help="Standalone action: export data as Kalibr camera-IMU calibration input (images + camchain.yaml + imu.csv), skipping --process_sync and normal frame extraction")
+    mode_group.add_argument("--trim_imu_static", type=str, choices=["start", "end", "both"], default=None, help="Standalone action: trim motion off a static IMU-only capture (for Allan variance / Kalibr imu.yaml), skipping --process_sync and normal frame extraction; writes trimmed imu.csv, imu_raw.csv, and a trim report")
+
     args = parser.parse_args()
 
     session_path = Path(args.session_dir)
@@ -45,6 +48,7 @@ def main():
     # Trim a static IMU-only capture, independent of frame count
     if args.trim_imu_static:
         print(f"\nTrimming static IMU capture (ends={args.trim_imu_static})...")
+        print("(standalone action: skipping --process_sync and frame extraction for this run)")
         if loader.imu_df is None:
             print("No imu.csv in this session.")
             return
@@ -79,6 +83,7 @@ def main():
     # Export as Kalibr camera-IMU calibration input if requested
     if args.export_kalibr:
         print("\nExporting Kalibr camera-IMU calibration input...")
+        print("(standalone action: skipping --process_sync and normal frame extraction for this run)")
         if args.kalibr_output_dir is None:
             kalibr_dir = session_path / "kalibr"
         else:
@@ -106,6 +111,7 @@ def main():
     # Export to COLMAP format if requested
     if args.export_colmap:
         print("\nExporting to COLMAP format with IMU-based pose priors...")
+        print("(standalone action: skipping --process_sync and normal frame extraction for this run)")
         if args.colmap_output_dir is None:
             colmap_dir = session_path / "colmap"
         else:
