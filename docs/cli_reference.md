@@ -18,8 +18,8 @@ Options:
                                   (images + camchain.yaml + imu.csv)
   --kalibr_output_dir STR        Output directory for Kalibr export (default: session_dir/kalibr)
   --trim_imu_static {start,end,both}
-                                  Standalone action: trim motion off a static IMU-only capture
-                                  (for Allan variance / Kalibr imu.yaml)
+                                  Standalone action: trim motion off a static IMU-only capture and
+                                  derive Kalibr's imu.yaml from it via Allan variance
   --imu_trim_output_dir STR      Output directory for --trim_imu_static (default: session_dir/imu_trimmed)
 ```
 

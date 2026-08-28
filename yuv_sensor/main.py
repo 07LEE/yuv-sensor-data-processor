@@ -10,6 +10,7 @@ from yuv_sensor.colmap_exporter import ColmapExporter
 from yuv_sensor.kalibr_exporter import KalibrExporter
 from yuv_sensor.frame_extractor import extract_frames
 from yuv_sensor.imu_trim import auto_trim_static_imu
+from yuv_sensor.allan_variance import compute_imu_noise_params, export_imu_yaml
 from yuv_sensor.io_utils import write_json
 
 
@@ -72,6 +73,18 @@ def main():
         if "end_cut_s" in report:
             print(f"  end: cut {report['end_cut_s']:.0f}s")
         print(f"  kept {report['kept_rows']} rows, dropped {report['dropped_rows']}")
+
+        print("\nDeriving imu.yaml (Allan variance)...")
+        try:
+            noise_params = compute_imu_noise_params(result["trimmed"])
+            yaml_path = export_imu_yaml(noise_params, trim_dir / "imu.yaml")
+            write_json(trim_dir / "imu_noise_report.json", noise_params)
+            print(f"  accel noise_density: {noise_params['accelerometer_noise_density']:.6g}  random_walk: {noise_params['accelerometer_random_walk']:.6g}")
+            print(f"  gyro  noise_density: {noise_params['gyroscope_noise_density']:.6g}  random_walk: {noise_params['gyroscope_random_walk']:.6g}")
+            print(f"  imu.yaml: {yaml_path}")
+        except ValueError as e:
+            print(f"  Could not derive imu.yaml: {e}")
+
         print(f"\nTrimmed output: {trim_dir}")
         return
 

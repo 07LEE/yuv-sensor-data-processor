@@ -8,6 +8,7 @@ from yuv_sensor.pose_estimator import PoseEstimator
 from yuv_sensor.colmap_exporter import ColmapExporter
 from yuv_sensor.kalibr_exporter import KalibrExporter
 from yuv_sensor.imu_trim import auto_trim_static_imu
+from yuv_sensor.allan_variance import compute_imu_noise_params, export_imu_yaml
 
 __version__ = "0.1.0"
 
@@ -20,4 +21,6 @@ __all__ = [
     "ColmapExporter",
     "KalibrExporter",
     "auto_trim_static_imu",
+    "compute_imu_noise_params",
+    "export_imu_yaml",
 ]

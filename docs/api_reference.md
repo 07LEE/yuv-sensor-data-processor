@@ -10,7 +10,8 @@ Complete reference for the `yuv_sensor` Python package.
 4. [ColmapExporter](#colmapexporter)
 5. [KalibrExporter](#kalibrexporter)
 6. [auto_trim_static_imu](#auto_trim_static_imu)
-7. [Utility Functions](#utility-functions)
+7. [compute_imu_noise_params](#compute_imu_noise_params)
+8. [Utility Functions](#utility-functions)
 
 ---
 
@@ -511,7 +512,7 @@ print(f"camchain.yaml: {result['camchain_yaml']}")
 print(f"imu.csv: {result['imu_csv']}")
 ```
 
-**Note**: Still needed before `kalibr_calibrate_imu_camera` can run: a `target.yaml` for the physical calibration board, an `imu.yaml` (see [`auto_trim_static_imu`](#auto_trim_static_imu) below), and packing `images/` + `imu.csv` into a rosbag. See [Kalibr Workflow](kalibr_workflow.md) for the full procedure.
+**Note**: Still needed before `kalibr_calibrate_imu_camera` can run: a `target.yaml` for the physical calibration board, an `imu.yaml` (see [`compute_imu_noise_params`](#compute_imu_noise_params) below), and packing `images/` + `imu.csv` into a rosbag. See [Kalibr Workflow](kalibr_workflow.md) for the full procedure.
 
 ---
 
@@ -557,7 +558,68 @@ print(f"kept {report['kept_rows']} rows, dropped {report['dropped_rows']}")
 result["trimmed"].to_csv("imu_trimmed.csv", index=False)
 ```
 
-**Note**: This is exposed via the CLI as `--trim_imu_static {start,end,both}`, which also writes `imu_raw.csv` (the untrimmed copy) and `trim_report.json` alongside the trimmed `imu.csv`. See [Kalibr Workflow](kalibr_workflow.md).
+**Note**: This is exposed via the CLI as `--trim_imu_static {start,end,both}`, which also writes `imu_raw.csv` (the untrimmed copy), `trim_report.json`, and — via `compute_imu_noise_params`/`export_imu_yaml` below — `imu.yaml` and `imu_noise_report.json` alongside the trimmed `imu.csv`. See [Kalibr Workflow](kalibr_workflow.md).
+
+---
+
+## compute_imu_noise_params
+
+Derives Kalibr's `imu.yaml` noise parameters (`accelerometer_noise_density`, `accelerometer_random_walk`, `gyroscope_noise_density`, `gyroscope_random_walk`) from a static IMU capture via Allan variance — the analysis step that follows `auto_trim_static_imu`, replacing the need for a separate external Allan variance tool.
+
+The overlapping Allan deviation curve of a static IMU axis is convex on a log-log plot: it falls with slope -1/2 while white sensor noise dominates at short cluster time `tau`, bottoms out, then rises with slope +1/2 once bias random walk dominates at long `tau`. The curve's minimum splits it into the two regions each slope is fit in; the -1/2 line's value at `tau=1s` gives the noise density, and the +1/2 line's value at `tau=3s` gives the random walk (IEEE-STD-952 convention).
+
+```python
+compute_imu_noise_params(imu_df: pd.DataFrame) -> Dict
+```
+
+**Args**:
+
+- `imu_df` (DataFrame): Static (motionless) IMU data with columns timestamp_ns, sensor, x, y, z — run `auto_trim_static_imu` on the raw capture first so edge motion doesn't corrupt the analysis
+
+**Returns**:
+
+- `Dict`:
+
+  ```python
+  {
+    "accelerometer_noise_density": 0.0021,   # m/s^2 / sqrt(Hz), averaged across x/y/z
+    "accelerometer_random_walk": 0.00015,
+    "accelerometer_rate_hz": 200.0,
+    "gyroscope_noise_density": 0.00014,       # rad/s / sqrt(Hz)
+    "gyroscope_random_walk": 1.2e-05,
+    "gyroscope_rate_hz": 200.0,
+    "detail": {
+      "accelerometer_x": {"noise_density": ..., "random_walk": ...},
+      "accelerometer_y": {...}, "accelerometer_z": {...},
+      "gyroscope_x": {...}, "gyroscope_y": {...}, "gyroscope_z": {...}
+    }
+  }
+  ```
+
+**Raises**:
+
+- `ValueError`: `imu_df` has no accel or gyro rows, or a capture is too short for the Allan deviation curve to show a clear minimum on some axis (white noise and random walk regions can't be separated) — use a longer static capture (hours, not minutes)
+
+**Example**:
+
+```python
+from yuv_sensor import SessionDataLoader, auto_trim_static_imu, compute_imu_noise_params, export_imu_yaml
+
+loader = SessionDataLoader("data/session_static_capture")
+trimmed = auto_trim_static_imu(loader.imu_df, ends="both")["trimmed"]
+
+noise_params = compute_imu_noise_params(trimmed)
+print(f"accel noise_density: {noise_params['accelerometer_noise_density']:.6g}")
+print(f"gyro random_walk: {noise_params['gyroscope_random_walk']:.6g}")
+
+export_imu_yaml(noise_params, "imu.yaml")
+```
+
+### `export_imu_yaml(noise_params: Dict, output_path: Path, rostopic: str = "/imu0") -> Path`
+
+Writes Kalibr's `imu.yaml` from the dict returned by `compute_imu_noise_params`.
+
+**Note**: This is exposed via the CLI as part of `--trim_imu_static {start,end,both}`, which runs the trim, then this analysis, and writes `imu.yaml` + `imu_noise_report.json` (the full dict, including the per-axis `detail`) into the trim output directory. Prints "Could not derive imu.yaml" and continues (the trim output is still written) if the capture is too short. See [Kalibr Workflow](kalibr_workflow.md).
 
 ---
 

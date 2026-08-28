@@ -4,14 +4,14 @@ End-to-end guide for preparing mobile scan data for camera-IMU extrinsic/intrins
 
 ## Overview
 
-Kalibr's `kalibr_calibrate_imu_camera` needs three independent inputs, only two of which `yuv_sensor` produces directly:
+Kalibr's `kalibr_calibrate_imu_camera` needs three independent inputs. `yuv_sensor` produces two of them directly, and derives the third (`imu.yaml`) itself via Allan variance:
 
 ```
 Static IMU-only capture (phone lying still)
     ↓
 auto_trim_static_imu (imu_trim.py)
     ↓
-Trimmed imu.csv ──→ external Allan variance tool ──→ imu.yaml (noise_density, random_walk)
+Trimmed imu.csv ──→ compute_imu_noise_params (allan_variance.py) ──→ imu.yaml (noise_density, random_walk)
 
 Checkerboard/AprilGrid capture (phone moving in view of the target)
     ↓
@@ -33,7 +33,7 @@ Two separate capture sessions are involved: a static one for `imu.yaml`, and a c
 - **yuv_sensor** installed: `pip install -e .`
 - **Kalibr** installed (Docker image is the path of least resistance): see [Kalibr installation docs](https://github.com/ethz-asl/kalibr/wiki/installation). No prebuilt image is published — `git clone https://github.com/ethz-asl/kalibr.git && cd kalibr && docker build -t kalibr -f Dockerfile_ros1_20_04 .` (pick the Dockerfile matching the Ubuntu base you want; `_20_04` targets Noetic). Confirmed by building it: the image's `ENTRYPOINT` is a fixed `cd $WORKSPACE && /bin/bash` that ignores whatever `CMD` you pass — `docker run -it ... kalibr` for an interactive shell, or `docker run --rm --entrypoint bash ... kalibr -c '...'` to run one command non-interactively without hitting that.
 - A physical calibration target (checkerboard or AprilGrid) and its `target.yaml` — `yuv_sensor` does not generate this
-- An Allan variance tool to turn the trimmed static capture into `imu.yaml` (e.g. [allan_variance_ros](https://github.com/ori-drs/allan_variance_ros) or [kalibr_allan](https://github.com/rpng/kalibr_allan)) — not part of this package, and not part of Kalibr either: a built Kalibr image ships exactly three executables (`kalibr_calibrate_cameras`, `kalibr_calibrate_imu_camera`, `kalibr_calibrate_rs_cameras`) — no `kalibr_calibrate_imu`, despite the name pattern suggesting otherwise.
+- No separate Allan variance tool needed — `--trim_imu_static` derives `imu.yaml` itself (see Step 1). An external tool (e.g. [allan_variance_ros](https://github.com/ori-drs/allan_variance_ros) or [kalibr_allan](https://github.com/rpng/kalibr_allan)) is still worth running as a cross-check on an important calibration, since it isn't part of Kalibr either: a built Kalibr image ships exactly three executables (`kalibr_calibrate_cameras`, `kalibr_calibrate_imu_camera`, `kalibr_calibrate_rs_cameras`) — no `kalibr_calibrate_imu`, despite the name pattern suggesting otherwise.
 
 ## Step 1: Trim the Static IMU Capture
 
@@ -49,10 +49,12 @@ This writes to `data/session_static_capture/imu_trimmed/`:
 - `imu.csv` — motion trimmed off both ends
 - `imu_raw.csv` — untrimmed copy, for comparison
 - `trim_report.json` — baseline accel magnitude, seconds cut from each end, kept/dropped row counts
+- `imu.yaml` — accelerometer/gyroscope `noise_density` and `random_walk`, derived from the trimmed capture via Allan variance (see [`compute_imu_noise_params`](api_reference.md#compute_imu_noise_params))
+- `imu_noise_report.json` — the same values plus a per-axis (x/y/z) breakdown
 
 The trim works by scanning accelerometer magnitude deviation from the session's own median in 1-second bins, and only trusting a boundary once 30 consecutive seconds stay under threshold (see [`auto_trim_static_imu`](api_reference.md#auto_trim_static_imu)). If the mapper prints "no clean start/end boundary found," the capture likely has motion (or a sensor glitch) that never settles — check `imu_raw.csv` by hand.
 
-Feed `imu_trimmed/imu.csv` into your Allan variance tool of choice to produce `imu.yaml`.
+`imu.yaml` derivation needs the Allan deviation curve to show a clear minimum (white noise falling, then random walk rising) within the trimmed capture — if it prints "could not derive imu.yaml," the capture is too short. Hours, not minutes, of static data is what Allan variance analysis actually needs; re-run with a longer capture.
 
 ## Step 2: Export the Calibration-Target Capture
 
