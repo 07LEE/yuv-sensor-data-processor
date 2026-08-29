@@ -38,6 +38,7 @@ For all command-line flags and defaults, see [CLI Reference](docs/cli_reference.
 - **COLMAP Integration**: Export images and camera parameters in COLMAP-compatible format with pose priors for 3D reconstruction
 - **Kalibr Export**: Export images, camchain.yaml, and imu.csv as input for Kalibr camera-IMU calibration
 - **Static IMU Trim + imu.yaml**: Auto-trim motion off the edges of a static IMU capture and derive Kalibr's imu.yaml (noise_density / random_walk) from it via Allan variance
+- **Checkerboard Camera Calibration**: Calibrate camera intrinsics directly from a checkerboard capture using OpenCV — no Kalibr/rosbag needed, a quick pre-check against session.json's own intrinsics
 
 ## Documentation
 

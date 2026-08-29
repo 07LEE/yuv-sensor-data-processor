@@ -9,6 +9,7 @@ from yuv_sensor.colmap_exporter import ColmapExporter
 from yuv_sensor.kalibr_exporter import KalibrExporter
 from yuv_sensor.imu_trim import auto_trim_static_imu
 from yuv_sensor.allan_variance import compute_imu_noise_params, export_imu_yaml
+from yuv_sensor.checkerboard_calib import calibrate_camera_from_checkerboard
 
 __version__ = "0.1.0"
 
@@ -23,4 +24,5 @@ __all__ = [
     "auto_trim_static_imu",
     "compute_imu_noise_params",
     "export_imu_yaml",
+    "calibrate_camera_from_checkerboard",
 ]

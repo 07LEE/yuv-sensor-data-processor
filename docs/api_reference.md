@@ -11,7 +11,8 @@ Complete reference for the `yuv_sensor` Python package.
 5. [KalibrExporter](#kalibrexporter)
 6. [auto_trim_static_imu](#auto_trim_static_imu)
 7. [compute_imu_noise_params](#compute_imu_noise_params)
-8. [Utility Functions](#utility-functions)
+8. [calibrate_camera_from_checkerboard](#calibrate_camera_from_checkerboard)
+9. [Utility Functions](#utility-functions)
 
 ---
 
@@ -620,6 +621,64 @@ export_imu_yaml(noise_params, "imu.yaml")
 Writes Kalibr's `imu.yaml` from the dict returned by `compute_imu_noise_params`.
 
 **Note**: This is exposed via the CLI as part of `--trim_imu_static {start,end,both}`, which runs the trim, then this analysis, and writes `imu.yaml` + `imu_noise_report.json` (the full dict, including the per-axis `detail`) into the trim output directory. Prints "Could not derive imu.yaml" and continues (the trim output is still written) if the capture is too short. See [Kalibr Workflow](kalibr_workflow.md).
+
+---
+
+## calibrate_camera_from_checkerboard
+
+Calibrates camera intrinsics directly from a checkerboard capture using OpenCV's own `findChessboardCorners`/`calibrateCamera` — a lightweight alternative to the full Kalibr pipeline for a quick sanity check. No rosbag, no `target.yaml`, no Kalibr install. It calibrates the camera alone and won't jointly refine camera-IMU extrinsics the way `kalibr_calibrate_imu_camera` does, so treat its output as a fast pre-check against `session.json`'s own intrinsics, not a replacement for a full Kalibr calibration.
+
+Frames are decoded without rotation or undistortion, matching the orientation `session.json`'s own intrinsics are defined in — so `fx`/`fy` can be compared directly against `session.json`.
+
+```python
+calibrate_camera_from_checkerboard(loader: SessionDataLoader, checkerboard_size: Tuple[int, int], square_size: float = 1.0, max_frames: Optional[int] = None, frame_stride: int = 1) -> Dict
+```
+
+**Args**:
+
+- `loader` (SessionDataLoader): Loaded session for a calibration-target capture (phone moved through frame in view of a checkerboard)
+- `checkerboard_size` (Tuple[int, int]): `(cols, rows)` of INNER corners on the board — a board with 10x7 squares has a `(9, 6)` inner-corner grid
+- `square_size` (float): Physical side length of one checkerboard square. Only scales the (otherwise unused) per-frame translation vectors — the intrinsics/distortion returned are unaffected, so the default of `1.0` is fine if you only care about those
+- `max_frames` (int, optional): Cap on frames scanned for corners, or None for all
+- `frame_stride` (int): Use every Nth frame (default: 1). Adjacent video frames barely change viewpoint, so striding through a long capture gets similar angle coverage for a fraction of the corner-detection cost
+
+**Returns**:
+
+- `Dict`:
+
+  ```python
+  {
+    "frames_scanned": 400, "frames_used": 37,
+    "checkerboard_size": [9, 6], "square_size": 1.0,
+    "image_size": [1440, 1080],
+    "rms_reprojection_error_px": 0.31,
+    "intrinsics": {"fx": 1441.2, "fy": 1440.8, "cx": 721.5, "cy": 538.9},
+    "distortion": {"k1": -0.098, "k2": 0.047, "p1": 0.0003, "p2": -0.0001, "k3": 0.0},
+    "per_frame_errors": [{"frame_index": 0, "reprojection_error_px": 0.28}, ...],
+    "session_json_intrinsics": [1440.5, 1440.5, 720.0, 540.0, 0.0],
+    "fx_delta_from_session_json": 0.7, "fy_delta_from_session_json": 0.3
+  }
+  ```
+
+  `session_json_intrinsics`/`*_delta_from_session_json` are only present when `session.json` has its own `intrinsics`.
+
+**Raises**:
+
+- `ValueError`: Checkerboard detected in fewer than 4 scanned frames — `calibrateCamera` needs several views at different angles (15-20+ for a reliable fit); usually a wrong `checkerboard_size`, a target out of frame, or heavy motion blur
+
+**Example**:
+
+```python
+from yuv_sensor import SessionDataLoader, calibrate_camera_from_checkerboard
+
+loader = SessionDataLoader("data/session_calib_target")
+result = calibrate_camera_from_checkerboard(loader, checkerboard_size=(9, 6), frame_stride=5)
+
+print(f"RMS reprojection error: {result['rms_reprojection_error_px']:.3f} px")
+print(f"fx={result['intrinsics']['fx']:.1f} fy={result['intrinsics']['fy']:.1f}")
+```
+
+**Note**: This is exposed via the CLI as `--calibrate_camera --checkerboard_size COLSxROWS`, which writes `checkerboard_calibration_report.json` (the full dict above) to `--camera_calib_output_dir` (default: `session_dir/camera_calibration`).
 
 ---
 

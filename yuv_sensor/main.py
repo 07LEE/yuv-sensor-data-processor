@@ -11,6 +11,7 @@ from yuv_sensor.kalibr_exporter import KalibrExporter
 from yuv_sensor.frame_extractor import extract_frames
 from yuv_sensor.imu_trim import auto_trim_static_imu
 from yuv_sensor.allan_variance import compute_imu_noise_params, export_imu_yaml
+from yuv_sensor.checkerboard_calib import calibrate_camera_from_checkerboard
 from yuv_sensor.io_utils import write_json
 
 
@@ -26,13 +27,28 @@ def main():
     parser.add_argument("--colmap_output_dir", type=str, default=None, help="Directory for COLMAP export (defaults to session_dir/colmap)")
     parser.add_argument("--kalibr_output_dir", type=str, default=None, help="Directory for Kalibr export (defaults to session_dir/kalibr)")
     parser.add_argument("--imu_trim_output_dir", type=str, default=None, help="Directory for --trim_imu_static output (defaults to session_dir/imu_trimmed)")
+    parser.add_argument("--checkerboard_size", type=str, default=None, help="Required by --calibrate_camera: inner-corner grid of the checkerboard as COLSxROWS, e.g. 9x6 for a 10x7-square board")
+    parser.add_argument("--square_size", type=float, default=1.0, help="Physical checkerboard square side length, in whatever unit you want (only scales the unused per-frame translation vectors; default: 1.0)")
+    parser.add_argument("--calib_frame_stride", type=int, default=5, help="Use every Nth frame for --calibrate_camera's corner detection (default: 5)")
+    parser.add_argument("--camera_calib_output_dir", type=str, default=None, help="Directory for --calibrate_camera output (defaults to session_dir/camera_calibration)")
 
     mode_group = parser.add_mutually_exclusive_group()
     mode_group.add_argument("--export_colmap", action="store_true", default=False, help="Standalone action: export data in COLMAP format with IMU-based pose priors, skipping --process_sync and normal frame extraction")
     mode_group.add_argument("--export_kalibr", action="store_true", default=False, help="Standalone action: export data as Kalibr camera-IMU calibration input (images + camchain.yaml + imu.csv), skipping --process_sync and normal frame extraction")
     mode_group.add_argument("--trim_imu_static", type=str, choices=["start", "end", "both"], default=None, help="Standalone action: trim motion off a static IMU-only capture (for Allan variance / Kalibr imu.yaml), skipping --process_sync and normal frame extraction; writes trimmed imu.csv, imu_raw.csv, and a trim report")
+    mode_group.add_argument("--calibrate_camera", action="store_true", default=False, help="Standalone action: calibrate camera intrinsics from a checkerboard capture using OpenCV directly (no Kalibr/rosbag needed), skipping --process_sync and normal frame extraction; requires --checkerboard_size")
 
     args = parser.parse_args()
+
+    if args.calibrate_camera:
+        if not args.checkerboard_size:
+            parser.error("--calibrate_camera requires --checkerboard_size COLSxROWS (e.g. 9x6)")
+        try:
+            checkerboard_size = tuple(int(v) for v in args.checkerboard_size.lower().split("x"))
+            if len(checkerboard_size) != 2:
+                raise ValueError
+        except ValueError:
+            parser.error(f"--checkerboard_size must be COLSxROWS (e.g. 9x6), got {args.checkerboard_size!r}")
 
     session_path = Path(args.session_dir)
     print(f"Loading session directory: {session_path}")
@@ -90,6 +106,41 @@ def main():
 
     if total_frames == 0:
         print("No frames found in session.")
+        return
+
+    # Calibrate camera intrinsics from a checkerboard capture if requested
+    if args.calibrate_camera:
+        print("\nCalibrating camera intrinsics from checkerboard frames...")
+        print("(standalone action: skipping --process_sync and normal frame extraction for this run)")
+
+        try:
+            calib_result = calibrate_camera_from_checkerboard(
+                loader,
+                checkerboard_size=checkerboard_size,
+                square_size=args.square_size,
+                max_frames=args.max_frames,
+                frame_stride=args.calib_frame_stride,
+            )
+        except ValueError as e:
+            print(f"  Calibration failed: {e}")
+            return
+
+        if args.camera_calib_output_dir is None:
+            calib_dir = session_path / "camera_calibration"
+        else:
+            calib_dir = Path(args.camera_calib_output_dir)
+        calib_dir.mkdir(parents=True, exist_ok=True)
+
+        report_path = write_json(calib_dir / "checkerboard_calibration_report.json", calib_result)
+
+        intr = calib_result["intrinsics"]
+        print(f"  Detected checkerboard in {calib_result['frames_used']}/{calib_result['frames_scanned']} scanned frames")
+        print(f"  RMS reprojection error: {calib_result['rms_reprojection_error_px']:.4f} px")
+        print(f"  fx={intr['fx']:.2f} fy={intr['fy']:.2f} cx={intr['cx']:.2f} cy={intr['cy']:.2f}")
+        if "fx_delta_from_session_json" in calib_result:
+            print(f"  Delta from session.json: fx={calib_result['fx_delta_from_session_json']:+.2f} fy={calib_result['fy_delta_from_session_json']:+.2f}")
+        print(f"  Report: {report_path}")
+        print(f"\nNote: this is a camera-only fit -- for camera-IMU extrinsics, run the full Kalibr workflow (see docs/kalibr_workflow.md)")
         return
 
     # Export as Kalibr camera-IMU calibration input if requested

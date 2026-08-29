@@ -21,9 +21,19 @@ Options:
                                   Standalone action: trim motion off a static IMU-only capture and
                                   derive Kalibr's imu.yaml from it via Allan variance
   --imu_trim_output_dir STR      Output directory for --trim_imu_static (default: session_dir/imu_trimmed)
+  --calibrate_camera             Standalone action: calibrate camera intrinsics from a checkerboard
+                                  capture using OpenCV directly (no Kalibr/rosbag needed); requires
+                                  --checkerboard_size
+  --checkerboard_size COLSxROWS  Inner-corner grid of the checkerboard, e.g. 9x6 for a 10x7-square
+                                  board (required by --calibrate_camera)
+  --square_size FLOAT            Physical checkerboard square side length, any unit (default: 1.0;
+                                  only scales unused per-frame translation vectors)
+  --calib_frame_stride N         Use every Nth frame for --calibrate_camera's corner detection
+                                  (default: 5)
+  --camera_calib_output_dir STR  Output directory for --calibrate_camera (default: session_dir/camera_calibration)
 ```
 
-`--export_colmap`, `--export_kalibr`, and `--trim_imu_static` are mutually exclusive standalone
-actions — each performs its own export/trim and exits without running `--process_sync` or normal
-frame extraction. See [COLMAP Workflow](colmap_workflow.md) and [Kalibr Workflow](kalibr_workflow.md)
-for end-to-end examples.
+`--export_colmap`, `--export_kalibr`, `--trim_imu_static`, and `--calibrate_camera` are mutually
+exclusive standalone actions — each performs its own export/trim/calibration and exits without
+running `--process_sync` or normal frame extraction. See [COLMAP Workflow](colmap_workflow.md) and
+[Kalibr Workflow](kalibr_workflow.md) for end-to-end examples.
