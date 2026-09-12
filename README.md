@@ -47,3 +47,7 @@ For all command-line flags and defaults, see [CLI Reference](docs/cli_reference.
 - [COLMAP Workflow](docs/colmap_workflow.md): End-to-end example with COLMAP integration
 - [Kalibr Workflow](docs/kalibr_workflow.md): End-to-end example for Kalibr camera-IMU calibration
 - [API Reference](docs/api_reference.md): Detailed module and class documentation
+
+## License
+
+Apache License 2.0 — see [LICENSE](LICENSE).

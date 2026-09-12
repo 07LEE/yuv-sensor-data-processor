@@ -5,7 +5,8 @@ yuv-sensor --session_dir <path> [options]
 
 Options:
   --session_dir STR              Path to session directory (required)
-  --output_dir STR               Output directory for extracted frames (default: session_dir/extracted_frames_raw)
+  --output_dir STR               Output directory for extracted frames
+                                  (default: session_dir/extracted_frames_raw)
   --format {jpg,png}             Output image format (default: jpg)
   --undistort                    Apply lens distortion correction
   --max_frames N                 Extract only first N frames
@@ -19,8 +20,9 @@ Options:
   --kalibr_output_dir STR        Output directory for Kalibr export (default: session_dir/kalibr)
   --trim_imu_static {start,end,both}
                                   Standalone action: trim motion off a static IMU-only capture and
-                                  derive Kalibr's imu.yaml from it via Allan variance
-  --imu_trim_output_dir STR      Output directory for --trim_imu_static (default: session_dir/imu_trimmed)
+                                  derive Kalibr imu.yaml from it via Allan variance
+  --imu_trim_output_dir STR      Output directory for --trim_imu_static
+                                  (default: session_dir/imu_trimmed)
   --calibrate_camera             Standalone action: calibrate camera intrinsics from a checkerboard
                                   capture using OpenCV directly (no Kalibr/rosbag needed); requires
                                   --checkerboard_size
@@ -28,9 +30,10 @@ Options:
                                   board (required by --calibrate_camera)
   --square_size FLOAT            Physical checkerboard square side length, any unit (default: 1.0;
                                   only scales unused per-frame translation vectors)
-  --calib_frame_stride N         Use every Nth frame for --calibrate_camera's corner detection
+  --calib_frame_stride N         Use every Nth frame during --calibrate_camera corner detection
                                   (default: 5)
-  --camera_calib_output_dir STR  Output directory for --calibrate_camera (default: session_dir/camera_calibration)
+  --camera_calib_output_dir STR  Output directory for --calibrate_camera
+                                  (default: session_dir/camera_calibration)
 ```
 
 `--export_colmap`, `--export_kalibr`, `--trim_imu_static`, and `--calibrate_camera` are mutually
