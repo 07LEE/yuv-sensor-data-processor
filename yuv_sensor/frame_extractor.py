@@ -3,7 +3,7 @@
 import os
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
-from typing import Callable, Optional
+from typing import Callable, List, Optional
 
 from PIL import Image
 
@@ -50,6 +50,7 @@ def extract_frames(
     undistort: bool = False,
     apply_rotation: bool = True,
     max_frames: Optional[int] = None,
+    indices: Optional[List[int]] = None,
     quality: int = 92,
     progress_every: int = 50,
     max_workers: Optional[int] = None,
@@ -73,6 +74,10 @@ def extract_frames(
         undistort: Apply lens distortion correction.
         apply_rotation: Rotate frame upright per sensor_orientation.
         max_frames: Cap on frames extracted, or None for all of them.
+            Ignored when indices is given.
+        indices: Explicit list of frame indices to extract (e.g. from
+            frame_quality.get_usable_frame_indices), or None to extract
+            max_frames/all frames in order.
         quality: JPEG quality (ignored for png).
         progress_every: Print progress every N frames.
         max_workers: Number of worker processes, or None to use one per CPU
@@ -81,17 +86,20 @@ def extract_frames(
     Returns:
         Number of frames extracted.
     """
-    total = len(loader.frames_df)
-    limit = total if max_frames is None else min(max_frames, total)
-
-    save_paths = []
-    for idx in range(limit):
-        row = loader.frames_df.iloc[idx]
-        filename = filename_for_row(idx, row, image_format)
-        save_paths.append(str(output_dir / filename))
+    if indices is None:
+        total = len(loader.frames_df)
+        limit = total if max_frames is None else min(max_frames, total)
+        indices = list(range(limit))
+    limit = len(indices)
 
     if limit == 0:
         return 0
+
+    save_paths = []
+    for idx in indices:
+        row = loader.frames_df.iloc[idx]
+        filename = filename_for_row(idx, row, image_format)
+        save_paths.append(str(output_dir / filename))
 
     if max_workers is None:
         max_workers = os.cpu_count() or 1
@@ -105,9 +113,9 @@ def extract_frames(
     ) as executor:
         futures = [
             executor.submit(
-                _decode_and_save, idx, save_paths[idx], image_format, undistort, apply_rotation, quality
+                _decode_and_save, idx, save_paths[i], image_format, undistort, apply_rotation, quality
             )
-            for idx in range(limit)
+            for i, idx in enumerate(indices)
         ]
         for future in as_completed(futures):
             future.result()

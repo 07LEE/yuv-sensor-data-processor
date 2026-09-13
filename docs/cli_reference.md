@@ -10,6 +10,11 @@ Options:
   --format {jpg,png}             Output image format (default: jpg)
   --undistort                    Apply lens distortion correction
   --max_frames N                 Extract only first N frames
+  --min_sharpness FLOAT          Exclude frames with frames.csv sharpness below this from
+                                  extraction/--export_colmap/--export_kalibr (a frame_quality_report.json
+                                  is always written regardless). Default: exclude nothing
+  --require_converged            Also exclude frames whose nearest capture.csv row has ae_state/awb_state
+                                  outside {CONVERGED, LOCKED} (exposure/white-balance still settling)
   --process_sync                 Generate synchronized_dataset.json (default: True; skipped by
                                   --export_colmap/--export_kalibr/--trim_imu_static, which are
                                   standalone actions)

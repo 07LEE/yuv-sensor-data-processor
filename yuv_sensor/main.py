@@ -9,6 +9,7 @@ from yuv_sensor.data_processor import DataProcessor
 from yuv_sensor.colmap_exporter import ColmapExporter
 from yuv_sensor.kalibr_exporter import KalibrExporter
 from yuv_sensor.frame_extractor import extract_frames
+from yuv_sensor.frame_quality import export_quality_report, get_usable_frame_indices
 from yuv_sensor.imu_trim import auto_trim_static_imu
 from yuv_sensor.allan_variance import compute_imu_noise_params, export_imu_yaml
 from yuv_sensor.checkerboard_calib import calibrate_camera_from_checkerboard
@@ -23,6 +24,8 @@ def main():
     parser.add_argument("--format", type=str, choices=["jpg", "png"], default="jpg", help="Output image format")
     parser.add_argument("--undistort", action="store_true", default=False, help="Apply lens distortion correction")
     parser.add_argument("--max_frames", type=int, default=None, help="Maximum number of frames to extract")
+    parser.add_argument("--min_sharpness", type=float, default=None, help="Exclude frames with frames.csv sharpness below this (blurry frames hurt COLMAP/Kalibr matching); a frame_quality_report.json is always written regardless. Default: exclude nothing")
+    parser.add_argument("--require_converged", action="store_true", default=False, help="Also exclude frames whose nearest capture.csv row has ae_state/awb_state outside {CONVERGED, LOCKED} (exposure/white-balance still settling)")
     parser.add_argument("--process_sync", action="store_true", default=True, help="Generate synchronized_dataset.json mapping frames to IMU and exposure data (skipped by --export_colmap/--export_kalibr/--trim_imu_static, which are standalone actions)")
     parser.add_argument("--colmap_output_dir", type=str, default=None, help="Directory for COLMAP export (defaults to session_dir/colmap)")
     parser.add_argument("--kalibr_output_dir", type=str, default=None, help="Directory for Kalibr export (defaults to session_dir/kalibr)")
@@ -157,7 +160,9 @@ def main():
             kalibr_dir,
             extract_images=True,
             image_format="png",
-            max_frames=args.max_frames
+            max_frames=args.max_frames,
+            min_sharpness=args.min_sharpness,
+            require_converged=args.require_converged,
         )
 
         print(f"\nKalibr export complete:")
@@ -165,6 +170,7 @@ def main():
         print(f"  camchain.yaml: {export_result['camchain_yaml']}")
         print(f"  imu.csv: {export_result['imu_csv']}")
         print(f"  Images: {export_result['images_dir']}")
+        print(f"  Frame quality report: {export_result['quality_report_json']}")
         print(f"\nStill needed before kalibr_calibrate_imu_camera can run:")
         print(f"  - a target.yaml for the physical calibration board")
         print(f"  - an imu.yaml (see --trim_imu_static on a separate static capture)")
@@ -186,7 +192,9 @@ def main():
             extract_images=True,
             undistort=args.undistort,
             image_format=args.format,
-            image_quality=92 if args.format == "jpg" else 100
+            image_quality=92 if args.format == "jpg" else 100,
+            min_sharpness=args.min_sharpness,
+            require_converged=args.require_converged,
         )
 
         print(f"\nCOLMAP export complete:")
@@ -195,6 +203,7 @@ def main():
         print(f"  Images list: {export_result['images_txt']}")
         print(f"  Pose priors: {export_result['pose_priors_json']}")
         print(f"  Images: {export_result['images_dir']}")
+        print(f"  Frame quality report: {export_result['quality_report_json']}")
         print(f"\nNext steps:")
         print(f"  cd {colmap_dir}")
         print(f"  colmap feature_extractor --database_path database.db --image_path images")
@@ -217,7 +226,21 @@ def main():
         out_dir = Path(args.output_dir)
 
     out_dir.mkdir(parents=True, exist_ok=True)
-    limit = total_frames if args.max_frames is None else min(args.max_frames, total_frames)
+
+    quality_report_path = export_quality_report(
+        loader,
+        out_dir / "frame_quality_report.json",
+        min_sharpness=args.min_sharpness,
+        require_converged=args.require_converged,
+        max_frames=args.max_frames,
+    )
+    usable_indices = get_usable_frame_indices(
+        loader,
+        min_sharpness=args.min_sharpness,
+        require_converged=args.require_converged,
+        max_frames=args.max_frames,
+    )
+    limit = len(usable_indices)
 
     print(f"\nExtracting {limit} / {total_frames} frames to: {out_dir} (Format: {args.format.upper()}, Undistort: {args.undistort})...")
 
@@ -227,7 +250,7 @@ def main():
         args.format,
         filename_for_row=lambda idx, row, fmt: f"{int(row['timestamp_ns'])}.{fmt}",
         undistort=args.undistort,
-        max_frames=args.max_frames,
+        indices=usable_indices,
     )
 
     # Write extraction_info.json metadata file into the output directory
@@ -246,6 +269,7 @@ def main():
     write_json(info_path, info_metadata)
 
     print(f"Saved extraction metadata to: {info_path}")
+    print(f"Frame quality report: {quality_report_path}")
     print(f"\nSuccessfully extracted {limit} frames into: {out_dir}")
 
 
