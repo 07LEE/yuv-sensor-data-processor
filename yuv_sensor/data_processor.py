@@ -73,12 +73,9 @@ class DataProcessor:
             if idx < total_frames - 1:
                 next_ts = int(self.loader.frames_df.iloc[idx + 1]["timestamp_ns"])
                 if self.loader.imu_df is not None:
-                    inter_imu = self.loader.imu_df[
-                        (self.loader.imu_df["timestamp_ns"] >= timestamp_ns) &
-                        (self.loader.imu_df["timestamp_ns"] <= next_ts)
-                    ]
-                    inter_accel = inter_imu[inter_imu["sensor"] == "accel"][["timestamp_ns", "x", "y", "z"]].to_dict(orient="records")
-                    inter_gyro = inter_imu[inter_imu["sensor"] == "gyro"][["timestamp_ns", "x", "y", "z"]].to_dict(orient="records")
+                    inter_imu = self.loader.get_imu_in_range(timestamp_ns, next_ts)
+                    inter_accel = inter_imu["accel"][["timestamp_ns", "x", "y", "z"]].to_dict(orient="records")
+                    inter_gyro = inter_imu["gyro"][["timestamp_ns", "x", "y", "z"]].to_dict(orient="records")
 
                     frame_entry["interframe_imu"] = {
                         "next_timestamp_ns": next_ts,

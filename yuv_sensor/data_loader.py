@@ -35,6 +35,17 @@ class SessionDataLoader:
         self.capture_df = pd.read_csv(self.session_path / "capture.csv") if (self.session_path / "capture.csv").exists() else None
         self.imu_df = pd.read_csv(self.session_path / "imu.csv") if (self.session_path / "imu.csv").exists() else None
 
+        # Built lazily on first use: per-sensor timestamp-sorted IMU tables
+        # and their timestamp arrays (for get_imu_in_range's binary search),
+        # and capture.csv sorted the same way (for get_nearest_capture_metadata).
+        # Building these once instead of re-filtering the full table on every
+        # call turns per-frame lookups from O(session length) into O(log
+        # session length).
+        self._imu_cache_built = False
+        self._imu_cache: Optional[Dict[str, Any]] = None
+        self._capture_cache_built = False
+        self._capture_cache: Optional[Dict[str, Any]] = None
+
     def get_frame_count(self) -> int:
         """Returns total number of frames in frames.csv."""
         return len(self.frames_df)
@@ -93,6 +104,55 @@ class SessionDataLoader:
 
         return rgb
 
+    def _ensure_imu_cache(self) -> None:
+        """Builds the per-sensor timestamp-sorted IMU cache once, lazily."""
+        if self._imu_cache_built:
+            return
+        self._imu_cache_built = True
+
+        if self.imu_df is None:
+            self._imu_cache = None
+            return
+
+        accel_df = self.imu_df[self.imu_df["sensor"] == "accel"].sort_values("timestamp_ns", kind="stable").reset_index(drop=True)
+        gyro_df = self.imu_df[self.imu_df["sensor"] == "gyro"].sort_values("timestamp_ns", kind="stable").reset_index(drop=True)
+        self._imu_cache = {
+            "accel_df": accel_df,
+            "accel_ts": accel_df["timestamp_ns"].to_numpy(),
+            "gyro_df": gyro_df,
+            "gyro_ts": gyro_df["timestamp_ns"].to_numpy(),
+        }
+
+    def get_imu_in_range(self, min_ts: int, max_ts: int) -> Dict[str, pd.DataFrame]:
+        """Finds IMU samples with timestamp_ns in [min_ts, max_ts] (inclusive).
+
+        Each sensor's samples are timestamp-sorted once and looked up here by
+        binary search (np.searchsorted) instead of re-scanning the full
+        table, so a per-frame caller costs O(log session length) rather than
+        O(session length).
+
+        Args:
+            min_ts: Inclusive lower bound, in nanoseconds.
+            max_ts: Inclusive upper bound, in nanoseconds.
+
+        Returns:
+            Dict containing 'accel' and 'gyro' DataFrames.
+        """
+        self._ensure_imu_cache()
+        if self._imu_cache is None:
+            return {"accel": pd.DataFrame(), "gyro": pd.DataFrame()}
+
+        cache = self._imu_cache
+        accel_lo = np.searchsorted(cache["accel_ts"], min_ts, side="left")
+        accel_hi = np.searchsorted(cache["accel_ts"], max_ts, side="right")
+        gyro_lo = np.searchsorted(cache["gyro_ts"], min_ts, side="left")
+        gyro_hi = np.searchsorted(cache["gyro_ts"], max_ts, side="right")
+
+        return {
+            "accel": cache["accel_df"].iloc[accel_lo:accel_hi],
+            "gyro": cache["gyro_df"].iloc[gyro_lo:gyro_hi],
+        }
+
     def get_synchronized_imu(self, timestamp_ns: int, time_window_ms: float = 100.0) -> Dict[str, pd.DataFrame]:
         """Finds IMU samples within a time window surrounding frame timestamp_ns.
 
@@ -103,21 +163,15 @@ class SessionDataLoader:
         Returns:
             Dict containing 'accel' and 'gyro' DataFrames centered around timestamp_ns.
         """
-        if self.imu_df is None:
-            return {"accel": pd.DataFrame(), "gyro": pd.DataFrame()}
-
         window_ns = int(time_window_ms * 1e6)
-        min_ts = timestamp_ns - window_ns
-        max_ts = timestamp_ns + window_ns
-
-        sub_imu = self.imu_df[(self.imu_df["timestamp_ns"] >= min_ts) & (self.imu_df["timestamp_ns"] <= max_ts)]
-        accel = sub_imu[sub_imu["sensor"] == "accel"].copy()
-        gyro = sub_imu[sub_imu["sensor"] == "gyro"].copy()
-
-        return {"accel": accel, "gyro": gyro}
+        return self.get_imu_in_range(timestamp_ns - window_ns, timestamp_ns + window_ns)
 
     def get_nearest_capture_metadata(self, timestamp_ns: int) -> Optional[pd.Series]:
         """Finds the nearest exposure and control metadata row in capture.csv for given timestamp_ns.
+
+        Looks up the nearest neighbor via binary search into a timestamp
+        -sorted cache built once, instead of an abs-diff argmin over the
+        full table on every call.
 
         Args:
             timestamp_ns: Target frame timestamp in nanoseconds.
@@ -125,8 +179,25 @@ class SessionDataLoader:
         Returns:
             Matching pd.Series row from capture.csv or None.
         """
-        if self.capture_df is None or len(self.capture_df) == 0:
+        if not self._capture_cache_built:
+            self._capture_cache_built = True
+            if self.capture_df is None or len(self.capture_df) == 0:
+                self._capture_cache = None
+            else:
+                sorted_df = self.capture_df.sort_values("timestamp_ns", kind="stable").reset_index(drop=True)
+                self._capture_cache = {"df": sorted_df, "ts": sorted_df["timestamp_ns"].to_numpy()}
+
+        if self._capture_cache is None:
             return None
 
-        idx = (self.capture_df["timestamp_ns"] - timestamp_ns).abs().idxmin()
-        return self.capture_df.iloc[idx]
+        ts = self._capture_cache["ts"]
+        idx = int(np.searchsorted(ts, timestamp_ns))
+        if idx == 0:
+            best = 0
+        elif idx == len(ts):
+            best = len(ts) - 1
+        else:
+            before, after = ts[idx - 1], ts[idx]
+            best = idx - 1 if (timestamp_ns - before) <= (after - timestamp_ns) else idx
+
+        return self._capture_cache["df"].iloc[best]
