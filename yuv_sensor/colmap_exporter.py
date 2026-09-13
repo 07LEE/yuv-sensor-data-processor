@@ -121,24 +121,32 @@ class ColmapExporter:
         """
         images_path = output_dir / "images.txt"
 
+        frame_indices = list(self.loader.frames_df.index)
+        filenames = [
+            row["filename"].replace(".yuv", ".jpg")
+            for _, row in self.loader.frames_df.iterrows()
+        ]
+
+        # Batched, not per-frame: one scipy call converting every frame's
+        # world-to-camera rotation to a quaternion instead of one Python-level
+        # call per frame (same fix as PoseEstimator's quaternion conversion).
+        r_cw_stack = np.stack([trajectory[idx]["rotation_matrix"].T for idx in frame_indices])
+        quats = Rotation.from_matrix(r_cw_stack).as_quat()  # (N, 4) xyzw
+        positions = np.stack([trajectory[idx]["position"] for idx in frame_indices])
+        translations = -np.einsum("nij,nj->ni", r_cw_stack, positions)
+
         with open(images_path, "w") as f:
             f.write("# Image list with two lines of data per image:\n")
             f.write("# IMAGE_ID, QW, QX, QY, QZ, TX, TY, TZ, CAMERA_ID, IMAGE_NAME\n")
             f.write("# POINTS2D[] as (X, Y, POINT3D_ID)\n")
             f.write(f"# Number of images: {len(self.loader.frames_df)}\n")
 
-            for frame_idx, frame_row in self.loader.frames_df.iterrows():
+            for i, frame_idx in enumerate(frame_indices):
                 image_id = frame_idx + 1  # COLMAP uses 1-based IDs
-                timestamp_ns = int(frame_row["timestamp_ns"])
-                filename = frame_row["filename"].replace(".yuv", ".jpg")
+                qx, qy, qz, qw = quats[i]
+                tx, ty, tz = translations[i]
 
-                pose = trajectory[frame_idx]
-                R_cw = pose["rotation_matrix"].T  # world-to-camera rotation
-                q = Rotation.from_matrix(R_cw).as_quat()  # xyzw format
-                qx, qy, qz, qw = q[0], q[1], q[2], q[3]
-                tx, ty, tz = -R_cw @ pose["position"]
-
-                f.write(f"{image_id} {qw:.6f} {qx:.6f} {qy:.6f} {qz:.6f} {tx:.6f} {ty:.6f} {tz:.6f} 1 {filename}\n")
+                f.write(f"{image_id} {qw:.6f} {qx:.6f} {qy:.6f} {qz:.6f} {tx:.6f} {ty:.6f} {tz:.6f} 1 {filenames[i]}\n")
                 f.write("# Image features (empty until COLMAP runs)\n")
 
         return images_path
