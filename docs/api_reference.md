@@ -12,9 +12,8 @@ Complete reference for the `yuv_sensor` Python package.
 6. [auto_trim_static_imu](#auto_trim_static_imu)
 7. [compute_imu_noise_params](#compute_imu_noise_params)
 8. [calibrate_camera_from_checkerboard](#calibrate_camera_from_checkerboard)
-9. [Utility Functions](#utility-functions)
-
----
+9. [Frame Quality Filtering](#frame-quality-filtering)
+10. [Utility Functions](#utility-functions)
 
 ## SessionDataLoader
 
@@ -26,15 +25,15 @@ Loads and provides access to a session's frame, IMU, and calibration data.
 SessionDataLoader(session_dir: str)
 ```
 
-**Args**:
+Args:
 
 - `session_dir` (str): Path to session directory containing frames.csv, imu.csv, capture.csv, and session.json
 
-**Raises**:
+Raises:
 
 - `FileNotFoundError`: If session_dir does not exist or session.json missing
 
-**Example**:
+Example:
 
 ```python
 from yuv_sensor import SessionDataLoader
@@ -70,19 +69,19 @@ print(f"Session has {total} frames")
 
 Loads raw YUV bytes and metadata for a frame.
 
-**Args**:
+Args:
 
 - `index` (int): Frame row index (0-based)
 
-**Returns**:
+Returns:
 
 - `Tuple[bytes, pd.Series]`: Raw YUV bytes and frame metadata row
 
-**Raises**:
+Raises:
 
 - `FileNotFoundError`: If raw YUV file not found
 
-**Example**:
+Example:
 
 ```python
 yuv_bytes, metadata = loader.load_raw_frame(0)
@@ -94,17 +93,17 @@ print(f"Frame size: {width}x{height}, YUV bytes: {len(yuv_bytes)}")
 
 Loads, decodes, and optionally processes a frame into RGB.
 
-**Args**:
+Args:
 
 - `index` (int): Frame row index
 - `apply_undistort` (bool): Apply lens distortion correction via OpenCV
 - `apply_rotation` (bool): Rotate image upright using sensor_orientation
 
-**Returns**:
+Returns:
 
 - `np.ndarray`: RGB image as numpy array (shape: height×width×3, dtype: uint8)
 
-**Example**:
+Example:
 
 ```python
 # Get undistorted, upright RGB frame
@@ -121,17 +120,17 @@ img.show()
 
 Retrieves IMU samples within a time window around a frame timestamp.
 
-**Args**:
+Args:
 
 - `timestamp_ns` (int): Frame timestamp in nanoseconds
 - `time_window_ms` (float): Half-width of time window in milliseconds (default: 100ms)
 
-**Returns**:
+Returns:
 
 - `Dict` with keys "accel" and "gyro", each containing filtered DataFrame with columns: timestamp_ns, x, y, z
 - Returns empty DataFrames if imu.csv not found
 
-**Example**:
+Example:
 
 ```python
 # Get IMU samples 50ms before and after frame timestamp
@@ -148,16 +147,16 @@ print(f"Mean acceleration: {accel_mean.values}")
 
 Finds nearest exposure/control metadata for a frame timestamp.
 
-**Args**:
+Args:
 
 - `timestamp_ns` (int): Frame timestamp
 
-**Returns**:
+Returns:
 
 - `pd.Series`: Closest capture metadata row, or None if not available
 - Columns: exposure_ns, sensitivity, focus_diopters, rolling_shutter_skew_ns, ...
 
-**Example**:
+Example:
 
 ```python
 capture = loader.get_nearest_capture_metadata(frame_ts)
@@ -165,8 +164,6 @@ if capture is not None:
     print(f"Exposure: {capture['exposure_ns']} ns")
     print(f"ISO: {capture['sensitivity']}")
 ```
-
----
 
 ## DataProcessor
 
@@ -178,11 +175,11 @@ Generates synchronized datasets linking frames to IMU and exposure metadata.
 DataProcessor(loader: SessionDataLoader)
 ```
 
-**Args**:
+Args:
 
 - `loader`: Loaded SessionDataLoader instance
 
-**Example**:
+Example:
 
 ```python
 from yuv_sensor import SessionDataLoader, DataProcessor
@@ -197,11 +194,11 @@ processor = DataProcessor(loader)
 
 Generates synchronized data structure for all frames.
 
-**Args**:
+Args:
 
 - `time_window_ms` (float): Time window half-width for IMU samples (default: 50ms)
 
-**Returns**:
+Returns:
 
 - `List[Dict]`: One entry per frame with structure:
 
@@ -234,7 +231,7 @@ Generates synchronized data structure for all frames.
   }
   ```
 
-**Example**:
+Example:
 
 ```python
 dataset = processor.generate_synchronized_dataset(time_window_ms=50.0)
@@ -249,16 +246,16 @@ print(f"Frame {frame0['frame_index']}: {len(frame0['imu_window']['accel'])} acce
 
 Generates and exports synchronized dataset to JSON.
 
-**Args**:
+Args:
 
 - `output_path` (str, optional): Output JSON path (default: session_dir/synchronized_dataset.json)
 - `time_window_ms` (float): Time window for IMU (default: 50ms)
 
-**Returns**:
+Returns:
 
 - `Path`: Path to exported JSON file
 
-**Example**:
+Example:
 
 ```python
 sync_file = processor.export_synchronized_dataset()
@@ -272,8 +269,6 @@ with open(sync_file) as f:
     print(f"Total frames: {data['total_frames']}")
 ```
 
----
-
 ## PoseEstimator
 
 Estimates camera pose trajectory from IMU accelerometer and gyroscope data.
@@ -284,7 +279,7 @@ Estimates camera pose trajectory from IMU accelerometer and gyroscope data.
 PoseEstimator(gravity_magnitude: float = 9.81)
 ```
 
-**Args**:
+Args:
 
 - `gravity_magnitude` (float): Magnitude of gravity (m/s²), default 9.81
 
@@ -294,13 +289,13 @@ PoseEstimator(gravity_magnitude: float = 9.81)
 
 Estimates camera trajectory by integrating IMU data.
 
-**Args**:
+Args:
 
 - `imu_df` (DataFrame, optional): IMU data with columns: timestamp_ns, sensor, x, y, z
 - `frames_df` (DataFrame): Frame metadata with column: timestamp_ns
 - `initial_rotation` (np.ndarray, optional): Initial 3×3 rotation matrix (default: identity)
 
-**Returns**:
+Returns:
 
 - `Dict[int, Dict]`: Maps frame_index to pose dict:
 
@@ -314,14 +309,16 @@ Estimates camera trajectory by integrating IMU data.
   }
   ```
 
-**Algorithm**:
+Algorithm:
 
-1. Gyroscope → incremental rotation (small angle approximation)
+1. Gyroscope → incremental rotation via the exact Rodrigues formula (not a small-angle linearization) at every gyro sample between consecutive frames
 2. Accelerometer → subtract gravity → acceleration in world frame
 3. Integrate acceleration → velocity → position
 4. Returns identity trajectory if IMU unavailable
 
-**Example**:
+The per-sample gyro integration loop is JIT-compiled with numba (cached to disk after the first run in a given environment, so only the very first call pays a one-time compile cost of a couple of seconds).
+
+Example:
 
 ```python
 from yuv_sensor import SessionDataLoader, PoseEstimator
@@ -337,30 +334,28 @@ for frame_idx, pose in trajectory.items():
         print(f"Frame {frame_idx}: pos={pose['position']}, quat={pose['quaternion']}")
 ```
 
-**Note**: These are approximate trajectories useful as initialization hints. COLMAP's feature-based SfM will refine them significantly.
+Note: These are approximate trajectories useful as initialization hints. COLMAP's feature-based SfM will refine them significantly.
 
 #### `get_frame_poses(trajectory: Dict[int, Dict], frames_df: pd.DataFrame) -> List[Tuple]`
 
 Converts trajectory to list format for easy export.
 
-**Args**:
+Args:
 
 - `trajectory`: Output from estimate_trajectory()
 - `frames_df`: Frame metadata
 
-**Returns**:
+Returns:
 
 - `List[(frame_idx, position, quaternion)]`: Each entry is (int, np.array[3], np.array[4])
 
-**Example**:
+Example:
 
 ```python
 poses = estimator.get_frame_poses(trajectory, loader.frames_df)
 for idx, pos, quat in poses[:5]:
     print(f"Frame {idx}: {pos}, {quat}")
 ```
-
----
 
 ## ColmapExporter
 
@@ -372,11 +367,11 @@ Exports session data in COLMAP-compatible format with IMU-based pose priors.
 ColmapExporter(loader: SessionDataLoader)
 ```
 
-**Args**:
+Args:
 
 - `loader`: Loaded SessionDataLoader instance
 
-**Example**:
+Example:
 
 ```python
 from yuv_sensor import SessionDataLoader, ColmapExporter
@@ -387,19 +382,21 @@ exporter = ColmapExporter(loader)
 
 ### Methods
 
-#### `export_to_directory(output_dir: Path, extract_images: bool = True, undistort: bool = False, image_format: str = "jpg", image_quality: int = 92) -> Dict[str, Path]`
+#### `export_to_directory(output_dir: Path, extract_images: bool = True, undistort: bool = False, image_format: str = "jpg", image_quality: int = 92, min_sharpness: Optional[float] = None, require_converged: bool = False) -> Dict[str, Path]`
 
 Exports all data to COLMAP workspace.
 
-**Args**:
+Args:
 
 - `output_dir` (Path or str): Output directory
 - `extract_images` (bool): Extract YUV → RGB images to output_dir/images/ (default: True)
 - `undistort` (bool): Apply lens distortion correction (default: False)
 - `image_format` (str): "jpg" or "png" (default: "jpg")
 - `image_quality` (int): JPEG quality 1-100 (default: 92)
+- `min_sharpness` (float, optional): Exclude frames with frames.csv `sharpness` below this from `images/`, `images.txt`, and `pose_priors.json`. `frame_quality_report.json` is always written regardless. Default `None` excludes nothing — see [Frame Quality Filtering](#frame-quality-filtering)
+- `require_converged` (bool): Also exclude frames whose nearest capture.csv row has `ae_state`/`awb_state` outside `{CONVERGED, LOCKED}` (default: False)
 
-**Returns**:
+Returns:
 
 - `Dict[str, Path]`:
 
@@ -409,19 +406,21 @@ Exports all data to COLMAP workspace.
     "images_txt": Path("output/images.txt"),
     "pose_priors_json": Path("output/pose_priors.json"),
     "metadata_json": Path("output/colmap_export_metadata.json"),
+    "quality_report_json": Path("output/frame_quality_report.json"),
     "images_dir": Path("output/images")
   }
   ```
 
-**Generated Files**:
+Generated Files:
 
 - `cameras.txt`: Camera intrinsics (PINHOLE model)
-- `images.txt`: COLMAP format (IMAGE_ID, QW, QX, QY, QZ, TX, TY, TZ, CAMERA_ID, NAME)
-- `pose_priors.json`: IMU trajectory (reference)
+- `images.txt`: COLMAP format (IMAGE_ID, QW, QX, QY, QZ, TX, TY, TZ, CAMERA_ID, NAME) — only frames that pass the quality filter (IMAGE_ID keeps `frame_idx + 1`, so gaps from excluded frames are expected and fine)
+- `pose_priors.json`: IMU trajectory (reference), same filtered frame set as `images.txt`
 - `colmap_export_metadata.json`: Export metadata and COLMAP commands
-- `images/`: Extracted RGB frames
+- `frame_quality_report.json`: Per-frame sharpness/ae_state/awb_state/af_state and which frames were excluded and why
+- `images/`: Extracted RGB frames (filtered)
 
-**Example**:
+Example:
 
 ```python
 loader = SessionDataLoader("data/session_419864820")
@@ -439,8 +438,6 @@ print(f"Images exported to: {result['images_dir']}")
 print(f"Ready for COLMAP: cd {result['images_dir'].parent}")
 ```
 
----
-
 ## KalibrExporter
 
 Exports session data as input for Kalibr's camera-IMU calibration. Unlike `ColmapExporter`, images are extracted without undistortion — Kalibr fits its own distortion model from the raw frames, and an already-undistorted image would get run through that fit a second time.
@@ -451,11 +448,11 @@ Exports session data as input for Kalibr's camera-IMU calibration. Unlike `Colma
 KalibrExporter(loader: SessionDataLoader)
 ```
 
-**Args**:
+Args:
 
 - `loader`: Loaded SessionDataLoader instance
 
-**Example**:
+Example:
 
 ```python
 from yuv_sensor import SessionDataLoader, KalibrExporter
@@ -466,18 +463,20 @@ exporter = KalibrExporter(loader)
 
 ### Methods
 
-#### `export_to_directory(output_dir: Path, extract_images: bool = True, image_format: str = "png", max_frames: Optional[int] = None) -> Dict[str, Optional[Path]]`
+#### `export_to_directory(output_dir: Path, extract_images: bool = True, image_format: str = "png", max_frames: Optional[int] = None, min_sharpness: Optional[float] = None, require_converged: bool = False) -> Dict[str, Optional[Path]]`
 
 Exports images, camchain.yaml, and imu.csv to a Kalibr input directory.
 
-**Args**:
+Args:
 
 - `output_dir` (Path or str): Target directory for the Kalibr input set
 - `extract_images` (bool): Extract YUV → RGB images to output_dir/images/ (default: True)
 - `image_format` (str): "jpg" or "png" (default: "png" — avoids re-compressing frames Kalibr will run corner detection on)
 - `max_frames` (int, optional): Cap on frames extracted, or None for all of them
+- `min_sharpness` (float, optional): Exclude frames with frames.csv `sharpness` below this from `images/` (blurry frames just fail Kalibr's own corner detection anyway). `frame_quality_report.json` is always written regardless. Default `None` excludes nothing — see [Frame Quality Filtering](#frame-quality-filtering)
+- `require_converged` (bool): Also exclude frames whose nearest capture.csv row has `ae_state`/`awb_state` outside `{CONVERGED, LOCKED}` (default: False)
 
-**Returns**:
+Returns:
 
 - `Dict[str, Optional[Path]]`: Value is `None` for a part that was skipped (e.g. no imu.csv on this session)
 
@@ -486,18 +485,20 @@ Exports images, camchain.yaml, and imu.csv to a Kalibr input directory.
     "camchain_yaml": Path("output/camchain.yaml"),
     "imu_csv": Path("output/imu.csv"),
     "images_dir": Path("output/images"),
-    "metadata_json": Path("output/kalibr_export_metadata.json")
+    "metadata_json": Path("output/kalibr_export_metadata.json"),
+    "quality_report_json": Path("output/frame_quality_report.json")
   }
   ```
 
-**Generated Files**:
+Generated Files:
 
 - `camchain.yaml`: Seed intrinsics reformatted from session.json's own calibration (not re-derived from checkerboard frames). `session.json`'s 5-coefficient distortion and any lens skew don't fit Kalibr's 4-param `radtan` model — both are dropped, flagged in a comment in the written file rather than silently discarded. Wide-FOV sessions (>90°) also get a comment suggesting Kalibr's `equidistant` (fisheye) model as a comparison.
 - `imu.csv`: Copied as-is from the session
 - `kalibr_export_metadata.json`: Export metadata
-- `images/`: Extracted RGB frames, not undistorted
+- `frame_quality_report.json`: Per-frame sharpness/ae_state/awb_state/af_state and which frames were excluded and why
+- `images/`: Extracted RGB frames (filtered), not undistorted
 
-**Example**:
+Example:
 
 ```python
 loader = SessionDataLoader("data/session_419864820")
@@ -513,9 +514,7 @@ print(f"camchain.yaml: {result['camchain_yaml']}")
 print(f"imu.csv: {result['imu_csv']}")
 ```
 
-**Note**: Still needed before `kalibr_calibrate_imu_camera` can run: a `target.yaml` for the physical calibration board, an `imu.yaml` (see [`compute_imu_noise_params`](#compute_imu_noise_params) below), and packing `images/` + `imu.csv` into a rosbag. See [Kalibr Workflow](kalibr_workflow.md) for the full procedure.
-
----
+Note: Still needed before `kalibr_calibrate_imu_camera` can run: a `target.yaml` for the physical calibration board, an `imu.yaml` (see [`compute_imu_noise_params`](#compute_imu_noise_params) below), and packing `images/` + `imu.csv` into a rosbag. See [Kalibr Workflow](kalibr_workflow.md) for the full procedure.
 
 ## auto_trim_static_imu
 
@@ -527,7 +526,7 @@ Finds the cut point by scanning accelerometer magnitude deviation from the sessi
 auto_trim_static_imu(imu_df: pd.DataFrame, ends: str = "both", threshold: float = 0.07, settle_run_s: float = 30, margin_s: float = 15, max_scan_s: float = 1800) -> Dict
 ```
 
-**Args**:
+Args:
 
 - `imu_df` (DataFrame): IMU data with columns timestamp_ns, sensor, x, y, z (accel + gyro interleaved, as loaded by SessionDataLoader)
 - `ends` (str): Which end(s) to scan and trim — "start", "end", or "both" (default: "both")
@@ -536,15 +535,15 @@ auto_trim_static_imu(imu_df: pd.DataFrame, ends: str = "both", threshold: float 
 - `margin_s` (float): Extra cushion added past the confirmed-clean point (default: 15)
 - `max_scan_s` (float): Give up looking for a clean boundary past this many seconds from the requested end (default: 1800)
 
-**Returns**:
+Returns:
 
 - `Dict` with `"trimmed"` (the cut DataFrame) and `"report"` (baseline magnitude, cut points found, kept/dropped row counts)
 
-**Raises**:
+Raises:
 
 - `ValueError`: No accel rows in imu_df, or no clean boundary found within max_scan_s on a requested end
 
-**Example**:
+Example:
 
 ```python
 from yuv_sensor import SessionDataLoader, auto_trim_static_imu
@@ -559,9 +558,7 @@ print(f"kept {report['kept_rows']} rows, dropped {report['dropped_rows']}")
 result["trimmed"].to_csv("imu_trimmed.csv", index=False)
 ```
 
-**Note**: This is exposed via the CLI as `--trim_imu_static {start,end,both}`, which also writes `imu_raw.csv` (the untrimmed copy), `trim_report.json`, and — via `compute_imu_noise_params`/`export_imu_yaml` below — `imu.yaml` and `imu_noise_report.json` alongside the trimmed `imu.csv`. See [Kalibr Workflow](kalibr_workflow.md).
-
----
+Note: This is exposed via the CLI as `--trim_imu_static {start,end,both}`, which also writes `imu_raw.csv` (the untrimmed copy), `trim_report.json`, and — via `compute_imu_noise_params`/`export_imu_yaml` below — `imu.yaml` and `imu_noise_report.json` alongside the trimmed `imu.csv`. See [Kalibr Workflow](kalibr_workflow.md).
 
 ## compute_imu_noise_params
 
@@ -573,11 +570,11 @@ The overlapping Allan deviation curve of a static IMU axis is convex on a log-lo
 compute_imu_noise_params(imu_df: pd.DataFrame) -> Dict
 ```
 
-**Args**:
+Args:
 
 - `imu_df` (DataFrame): Static (motionless) IMU data with columns timestamp_ns, sensor, x, y, z — run `auto_trim_static_imu` on the raw capture first so edge motion doesn't corrupt the analysis
 
-**Returns**:
+Returns:
 
 - `Dict`:
 
@@ -597,11 +594,11 @@ compute_imu_noise_params(imu_df: pd.DataFrame) -> Dict
   }
   ```
 
-**Raises**:
+Raises:
 
 - `ValueError`: `imu_df` has no accel or gyro rows, or a capture is too short for the Allan deviation curve to show a clear minimum on some axis (white noise and random walk regions can't be separated) — use a longer static capture (hours, not minutes)
 
-**Example**:
+Example:
 
 ```python
 from yuv_sensor import SessionDataLoader, auto_trim_static_imu, compute_imu_noise_params, export_imu_yaml
@@ -620,9 +617,7 @@ export_imu_yaml(noise_params, "imu.yaml")
 
 Writes Kalibr's `imu.yaml` from the dict returned by `compute_imu_noise_params`.
 
-**Note**: This is exposed via the CLI as part of `--trim_imu_static {start,end,both}`, which runs the trim, then this analysis, and writes `imu.yaml` + `imu_noise_report.json` (the full dict, including the per-axis `detail`) into the trim output directory. Prints "Could not derive imu.yaml" and continues (the trim output is still written) if the capture is too short. See [Kalibr Workflow](kalibr_workflow.md).
-
----
+Note: This is exposed via the CLI as part of `--trim_imu_static {start,end,both}`, which runs the trim, then this analysis, and writes `imu.yaml` + `imu_noise_report.json` (the full dict, including the per-axis `detail`) into the trim output directory. Prints "Could not derive imu.yaml" and continues (the trim output is still written) if the capture is too short. See [Kalibr Workflow](kalibr_workflow.md).
 
 ## calibrate_camera_from_checkerboard
 
@@ -634,7 +629,7 @@ Frames are decoded without rotation or undistortion, matching the orientation `s
 calibrate_camera_from_checkerboard(loader: SessionDataLoader, checkerboard_size: Tuple[int, int], square_size: float = 1.0, max_frames: Optional[int] = None, frame_stride: int = 1) -> Dict
 ```
 
-**Args**:
+Args:
 
 - `loader` (SessionDataLoader): Loaded session for a calibration-target capture (phone moved through frame in view of a checkerboard)
 - `checkerboard_size` (Tuple[int, int]): `(cols, rows)` of INNER corners on the board — a board with 10x7 squares has a `(9, 6)` inner-corner grid
@@ -642,7 +637,7 @@ calibrate_camera_from_checkerboard(loader: SessionDataLoader, checkerboard_size:
 - `max_frames` (int, optional): Cap on frames scanned for corners, or None for all
 - `frame_stride` (int): Use every Nth frame (default: 1). Adjacent video frames barely change viewpoint, so striding through a long capture gets similar angle coverage for a fraction of the corner-detection cost
 
-**Returns**:
+Returns:
 
 - `Dict`:
 
@@ -662,11 +657,11 @@ calibrate_camera_from_checkerboard(loader: SessionDataLoader, checkerboard_size:
 
   `session_json_intrinsics`/`*_delta_from_session_json` are only present when `session.json` has its own `intrinsics`.
 
-**Raises**:
+Raises:
 
 - `ValueError`: Checkerboard detected in fewer than 4 scanned frames — `calibrateCamera` needs several views at different angles (15-20+ for a reliable fit); usually a wrong `checkerboard_size`, a target out of frame, or heavy motion blur
 
-**Example**:
+Example:
 
 ```python
 from yuv_sensor import SessionDataLoader, calibrate_camera_from_checkerboard
@@ -678,9 +673,57 @@ print(f"RMS reprojection error: {result['rms_reprojection_error_px']:.3f} px")
 print(f"fx={result['intrinsics']['fx']:.1f} fy={result['intrinsics']['fy']:.1f}")
 ```
 
-**Note**: This is exposed via the CLI as `--calibrate_camera --checkerboard_size COLSxROWS`, which writes `checkerboard_calibration_report.json` (the full dict above) to `--camera_calib_output_dir` (default: `session_dir/camera_calibration`).
+Note: This is exposed via the CLI as `--calibrate_camera --checkerboard_size COLSxROWS`, which writes `checkerboard_calibration_report.json` (the full dict above) to `--camera_calib_output_dir` (default: `session_dir/camera_calibration`).
 
----
+## Frame Quality Filtering
+
+`frames.csv`'s `sharpness` and `capture.csv`'s Android Camera2 `ae_state`/`awb_state` are recorded at capture time but otherwise unused by the pipeline. `yuv_sensor.frame_quality` turns them into a report, and optionally a filter, addressing two failure modes [COLMAP Workflow](colmap_workflow.md)'s troubleshooting section otherwise asks you to check by hand: motion-blurred frames, and frames caught while exposure/white-balance is still settling.
+
+Camera2 state codes (see [CaptureResult](https://developer.android.com/reference/android/hardware/camera2/CaptureResult)): `CONTROL_AE_STATE` 0=INACTIVE 1=SEARCHING 2=CONVERGED 3=LOCKED 4=FLASH_REQUIRED 5=PRECAPTURE; `CONTROL_AWB_STATE` 0=INACTIVE 1=SEARCHING 2=CONVERGED 3=LOCKED. "Unconverged" below means a state other than CONVERGED (2) or LOCKED (3).
+
+### `assess_frame_quality(loader, min_sharpness=None, require_converged=False, max_frames=None) -> List[Dict]`
+
+Per-frame quality signals plus a `usable` verdict. With both filters left at their default (off), every frame comes back `usable=True` — filtering is opt-in, never silently applied.
+
+Args:
+
+- `loader` (SessionDataLoader): Loaded session
+- `min_sharpness` (float, optional): Frames with `sharpness` below this are flagged `blurry`. `None` disables the check
+- `require_converged` (bool): Flags frames whose nearest capture.csv row has `ae_state`/`awb_state` outside `{CONVERGED, LOCKED}` as `unconverged`. A frame with no capture.csv match, or missing columns, is never flagged this way
+- `max_frames` (int, optional): Only assess the first N frames
+
+Returns: one dict per frame — `frame_index`, `timestamp_ns`, `sharpness`, `ae_state`, `awb_state`, `af_state`, `blurry`, `unconverged`, `usable`.
+
+### `get_usable_frame_indices(loader, min_sharpness=None, require_converged=False, max_frames=None) -> List[int]`
+
+Frame indices left after applying the given filters — pass straight to `frame_extractor.extract_frames(..., indices=...)`.
+
+### `build_quality_report(loader, min_sharpness=None, require_converged=False, max_frames=None) -> Dict`
+
+The full report: `assess_frame_quality`'s per-frame list plus `total_frames`, `blurry_count`, `unconverged_count`, `usable_count`, `excluded_count`, and `warning`. `warning` is a string (else `None`) whenever an active filter excludes 50%+ of frames — COLMAP needs enough overlapping views to reconstruct, so a filter that aggressive is worth a second look before committing to it.
+
+### `export_quality_report(loader, output_path, min_sharpness=None, require_converged=False, max_frames=None) -> Path`
+
+Writes `build_quality_report()`'s result as JSON to `output_path`, printing the `warning` (if any) to stdout. This is what `ColmapExporter`/`KalibrExporter`/the CLI's default extraction path call to always produce `frame_quality_report.json`, whether or not a filter is active.
+
+Example:
+
+```python
+from yuv_sensor import SessionDataLoader, build_quality_report, get_usable_frame_indices
+from yuv_sensor.frame_extractor import extract_frames
+
+loader = SessionDataLoader("data/session_419864820")
+
+report = build_quality_report(loader, min_sharpness=0.3)
+print(f"{report['excluded_count']}/{report['total_frames']} frames excluded")
+if report["warning"]:
+    print(report["warning"])
+
+usable = get_usable_frame_indices(loader, min_sharpness=0.3)
+extract_frames(loader, "output/images", "jpg", indices=usable)
+```
+
+Note: Exposed via the CLI as `--min_sharpness FLOAT` and `--require_converged`, on the default extraction path and on `--export_colmap`/`--export_kalibr`. `frame_quality_report.json` is written every time, regardless of whether either flag is set.
 
 ## Utility Functions
 
@@ -688,7 +731,7 @@ print(f"fx={result['intrinsics']['fx']:.1f} fy={result['intrinsics']['fy']:.1f}"
 
 Low-level YUV decoding function (usually called internally by SessionDataLoader).
 
-**Args**:
+Args:
 
 - `yuv_bytes` (bytes): Raw YUV frame data
 - `width`, `height` (int): Frame dimensions
@@ -696,13 +739,11 @@ Low-level YUV decoding function (usually called internally by SessionDataLoader)
 - `luma_row_stride`, `chroma_row_stride`, `chroma_pixel_stride` (int): Memory layout parameters
 - `segment0_length`, `segment1_length`, `segment2_length` (int): Segment sizes
 
-**Returns**:
+Returns:
 
 - `np.ndarray`: RGB image (height×width×3, uint8)
 
-**Note**: Prefer SessionDataLoader.get_decoded_frame() which handles all parameters automatically.
-
----
+Note: Prefer SessionDataLoader.get_decoded_frame() which handles all parameters automatically.
 
 ## Data Format Reference
 
@@ -739,8 +780,6 @@ timestamp_ns,sensor,x,y,z
 - `sensor`: "accel" or "gyro"
 - Units: m/s² (accel), rad/s (gyro)
 
----
-
 ## Error Handling
 
 ### Common Exceptions
@@ -759,11 +798,9 @@ except IndexError as e:
     print(f"Frame index out of range: {e}")
 ```
 
----
-
 ## Performance Tips
 
-1. **Batch processing**: Iterate over frames instead of loading all at once
+1. Batch processing: Iterate over frames instead of loading all at once
 
    ```python
    for idx in range(loader.get_frame_count()):
@@ -771,11 +808,11 @@ except IndexError as e:
        # Process rgb...
    ```
 
-2. **Skip undistortion** if not needed (expensive OpenCV operation)
+2. Skip undistortion if not needed (expensive OpenCV operation)
 
-3. **Limit time windows** in get_synchronized_imu() for faster queries
+3. Limit time windows in get_synchronized_imu() for faster queries
 
-4. **Use NumPy operations** on batch data for speed:
+4. Use NumPy operations on batch data for speed:
 
    ```python
    accel_data = imu['accel'][['x', 'y', 'z']].to_numpy()  # Faster than iterating

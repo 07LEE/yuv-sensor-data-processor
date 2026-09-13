@@ -28,8 +28,8 @@ Output: Sparse Point Cloud + Refined Camera Poses
 
 ## Prerequisites
 
-- **yuv_sensor** installed: `pip install -e .`
-- **COLMAP** installed: See [COLMAP documentation](https://colmap.github.io/)
+- yuv_sensor installed: `pip install -e .`
+- COLMAP installed: See [COLMAP documentation](https://colmap.github.io/)
 
   ```bash
   # macOS
@@ -61,6 +61,21 @@ This generates:
 - `output/colmap/images.txt` — Image list with IMU-estimated poses
 - `output/colmap/pose_priors.json` — IMU trajectory (reference only)
 - `output/colmap/colmap_export_metadata.json` — Export metadata
+- `output/colmap/frame_quality_report.json` — Per-frame sharpness and exposure/white-balance convergence state, always written (see below)
+
+### Optional: filter out blurry / not-yet-converged frames first
+
+`frame_quality_report.json` above is generated either way, so you can inspect it before deciding whether to filter anything. If you do want to exclude frames, add:
+
+```bash
+yuv-sensor --session_dir data/session_419864820 \
+           --export_colmap \
+           --colmap_output_dir output/colmap \
+           --min_sharpness 0.3 \
+           --require_converged
+```
+
+`--min_sharpness` drops frames below that frames.csv `sharpness` value; `--require_converged` also drops frames whose nearest capture.csv row wasn't at `ae_state`/`awb_state` CONVERGED/LOCKED yet. Both are opt-in (default: exclude nothing) and apply consistently across `images/`, `images.txt`, and `pose_priors.json`. A filter that excludes 50%+ of frames prints a warning — COLMAP needs enough overlapping views to reconstruct, so check `frame_quality_report.json`'s per-frame entries before committing to an aggressive threshold. See [API Reference](api_reference.md#frame-quality-filtering).
 
 ### Using Python API
 
@@ -96,14 +111,14 @@ colmap feature_extractor \
     --ImageReader.single_camera 1
 ```
 
-**Parameters**:
+Parameters:
 
 - `--database_path database.db` — COLMAP database file
 - `--image_path images` — Directory with extracted RGB images
 - `--ImageReader.camera_model PINHOLE` — Match our camera model
 - `--ImageReader.single_camera 1` — All images use same camera model (intrinsics)
 
-**Output**: `database.db` populated with image metadata and keypoints.
+Output: `database.db` populated with image metadata and keypoints.
 
 ## Step 3: Image Matching
 
@@ -116,15 +131,15 @@ colmap sequential_matcher \
     --SequentialMatching.quadratic_overlap 1
 ```
 
-**Why sequential matching?**: Since images follow a camera trajectory (sequential scan), sequential matching is faster than exhaustive matching.
+Why sequential matching: since images follow a camera trajectory (sequential scan), sequential matching is faster than exhaustive matching.
 
-**Alternative for small datasets** (< 100 images, dense sampling):
+Alternative for small datasets (< 100 images, dense sampling):
 
 ```bash
 colmap exhaustive_matcher --database_path database.db
 ```
 
-**Output**: Feature matches stored in `database.db`.
+Output: Feature matches stored in `database.db`.
 
 ## Step 4: Incremental Mapper (Main SfM)
 
@@ -143,19 +158,19 @@ colmap mapper \
     --Mapper.ignore_watermark 1
 ```
 
-**Parameters**:
+Parameters:
 
 - `--output_path sparse` — Directory for output models
 - `--Mapper.ignore_watermark 1` — Skip watermark check
 
-**Expected output**:
+Expected output:
 
 - `sparse/0/` — Model directory with:
   - `images.txt` — Refined camera poses (xyzw quaternion format)
   - `points3D.txt` — 3D point cloud
   - `cameras.txt` — Refined intrinsics
 
-**Runtime**: Depends on image count. ~10-30s for 100-500 images on modern hardware.
+Runtime: Depends on image count. ~10-30s for 100-500 images on modern hardware.
 
 ## Step 5: (Optional) Bundle Adjustment Refinement
 
@@ -190,24 +205,24 @@ This produces:
 
 ### "Not enough matches" / Mapper fails to initialize
 
-**Causes**:
+Causes:
 
 - Images too different (large baseline, rotation)
 - Insufficient visual overlap
 - Low image quality or motion blur
 
-**Solutions**:
+Solutions:
 
 1. Check pose_priors.json — do poses look reasonable?
-2. Verify images are in focus and well-lit
+2. Verify images are in focus and well-lit — check `frame_quality_report.json` (always generated in Step 1) for blurry or not-yet-converged frames, and re-export with `--min_sharpness`/`--require_converged` if it finds a lot of them
 3. Try exhaustive matching instead of sequential
 4. Reduce `--SequentialMatching.overlap` to 3 or 1
 
 ### "Intrinsics refinement failed"
 
-**Cause**: Camera intrinsics in cameras.txt might be slightly off.
+Cause: Camera intrinsics in cameras.txt might be slightly off.
 
-**Solution**:
+Solution:
 
 1. Double-check session.json intrinsics
 2. Verify image resolution matches (width/height in cameras.txt)
@@ -219,7 +234,7 @@ This produces:
 
 ### Output looks distorted or wrong rotation
 
-**Check**:
+Check:
 
 1. Session orientation: Verify `sensor_orientation` in session.json matches device mounting
 2. Image undistortion: Try `--undistort` flag in yuv-sensor export if not already applied
@@ -227,7 +242,7 @@ This produces:
 
 ### Out of memory
 
-**If dataset is large** (> 1000 images):
+If dataset is large (> 1000 images):
 
 1. Reduce image resolution (save as smaller JPEGs)
 2. Use `--Mapper.abs_pose_max_error 10` to be less strict on outliers
@@ -264,12 +279,12 @@ colmap gui
 
 ## Tips for Best Results
 
-1. **Overlap**: Aim for 50-80% image overlap (not every other frame)
-2. **Motion**: Smooth, continuous motion (avoid sudden jumps/rotation)
-3. **Lighting**: Consistent lighting; avoid moving shadows
-4. **Camera Settings**: Fixed focus, exposure; auto-focus can hurt matching
-5. **Resolution**: Higher resolution = more features but slower processing
-6. **Unique geometry**: Avoid featureless surfaces (blank walls, reflective floors)
+1. Overlap: Aim for 50-80% image overlap (not every other frame)
+2. Motion: Smooth, continuous motion (avoid sudden jumps/rotation)
+3. Lighting: Consistent lighting; avoid moving shadows
+4. Camera Settings: Fixed focus, exposure; auto-focus can hurt matching
+5. Resolution: Higher resolution = more features but slower processing
+6. Unique geometry: Avoid featureless surfaces (blank walls, reflective floors)
 
 ## Performance Benchmarks
 
@@ -283,6 +298,6 @@ Times on RTX 3070, M1 Pro times are similar.
 
 ## Next Steps
 
-- **Mesh reconstruction**: Use dense point clouds with Poisson reconstruction
-- **Camera alignment**: Use refined poses for downstream AR/robotics applications
-- **Streaming/SfM**: Use COLMAP's MVS (multi-view stereo) for denser geometry
+- Mesh reconstruction: Use dense point clouds with Poisson reconstruction
+- Camera alignment: Use refined poses for downstream AR/robotics applications
+- Streaming/SfM: Use COLMAP's MVS (multi-view stereo) for denser geometry

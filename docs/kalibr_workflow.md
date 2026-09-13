@@ -30,8 +30,8 @@ Two separate capture sessions are involved: a static one for `imu.yaml`, and a c
 
 ## Prerequisites
 
-- **yuv_sensor** installed: `pip install -e .`
-- **Kalibr** installed (Docker image is the path of least resistance): see [Kalibr installation docs](https://github.com/ethz-asl/kalibr/wiki/installation). No prebuilt image is published — `git clone https://github.com/ethz-asl/kalibr.git && cd kalibr && docker build -t kalibr -f Dockerfile_ros1_20_04 .` (pick the Dockerfile matching the Ubuntu base you want; `_20_04` targets Noetic). Confirmed by building it: the image's `ENTRYPOINT` is a fixed `cd $WORKSPACE && /bin/bash` that ignores whatever `CMD` you pass — `docker run -it ... kalibr` for an interactive shell, or `docker run --rm --entrypoint bash ... kalibr -c '...'` to run one command non-interactively without hitting that.
+- yuv_sensor installed: `pip install -e .`
+- Kalibr installed (Docker image is the path of least resistance): see [Kalibr installation docs](https://github.com/ethz-asl/kalibr/wiki/installation). No prebuilt image is published — `git clone https://github.com/ethz-asl/kalibr.git && cd kalibr && docker build -t kalibr -f Dockerfile_ros1_20_04 .` (pick the Dockerfile matching the Ubuntu base you want; `_20_04` targets Noetic). Confirmed by building it: the image's `ENTRYPOINT` is a fixed `cd $WORKSPACE && /bin/bash` that ignores whatever `CMD` you pass — `docker run -it ... kalibr` for an interactive shell, or `docker run --rm --entrypoint bash ... kalibr -c '...'` to run one command non-interactively without hitting that.
 - A physical calibration target (checkerboard or AprilGrid) and its `target.yaml` — `yuv_sensor` does not generate this
 - No separate Allan variance tool needed — `--trim_imu_static` derives `imu.yaml` itself (see Step 1). An external tool (e.g. [allan_variance_ros](https://github.com/ori-drs/allan_variance_ros) or [kalibr_allan](https://github.com/rpng/kalibr_allan)) is still worth running as a cross-check on an important calibration, since it isn't part of Kalibr either: a built Kalibr image ships exactly three executables (`kalibr_calibrate_cameras`, `kalibr_calibrate_imu_camera`, `kalibr_calibrate_rs_cameras`) — no `kalibr_calibrate_imu`, despite the name pattern suggesting otherwise.
 
@@ -72,8 +72,11 @@ This generates:
 - `output/kalibr/camchain.yaml` — seed intrinsics reformatted from `session.json`'s own calibration
 - `output/kalibr/imu.csv` — this session's IMU log, copied as-is
 - `output/kalibr/kalibr_export_metadata.json` — export metadata
+- `output/kalibr/frame_quality_report.json` — per-frame sharpness and exposure/white-balance convergence state, always written
 
 Sanity-check `camchain.yaml` before using it: it's reformatted from the phone's manufacturer-reported calibration, not re-derived from the checkerboard frames. Comments in the file flag anything dropped in translation (`session.json`'s 5th distortion coefficient, lens skew) or worth double-checking (wide FOV, where `equidistant` may fit better than `pinhole`+`radtan`).
+
+Blurry frames just fail Kalibr's own corner detection anyway, so if `frame_quality_report.json` shows a lot of them, re-export with `--min_sharpness` (e.g. `--export_kalibr --min_sharpness 0.3`) to skip them up front — opt-in, excludes nothing by default. See [API Reference](api_reference.md#frame-quality-filtering).
 
 ### Choosing the camera model
 
@@ -86,10 +89,10 @@ Sanity-check `camchain.yaml` before using it: it's reformatted from the phone's 
    | What to check | How to read it |
    | --- | --- |
    | Mean/RMS reprojection error (px) | Lower wins. ~0.1-0.3px is a good fit; approaching or past 1px means the model doesn't fit the data |
-   | Residual scatter plot | Should look like small, roughly uniform noise across the whole frame. Error that grows toward the frame **edges** specifically is the signature of a wide-FOV model mismatch — pinhole's usual failure mode |
+   | Residual scatter plot | Should look like small, roughly uniform noise across the whole frame. Error that grows toward the frame edges specifically is the signature of a wide-FOV model mismatch — pinhole's usual failure mode |
    | Fitted parameters | Focal length should stay close to the manufacturer seed (`session.json`'s `intrinsics`); distortion coefficients blown up far past typical radtan/equidistant magnitudes means the model is straining to compensate for a shape it can't represent |
 
-4. Pick the model with lower reprojection error **and** no edge-growing residual pattern. The two usually agree, but a low mean error with a clear edge pattern is still the worse choice — that pattern biases the geometry Kalibr recovers even though the average looks fine. For a lens this wide, `equidistant` more often wins, but that's a prior this comparison is meant to override when the data disagrees.
+4. Pick the model with lower reprojection error and no edge-growing residual pattern. The two usually agree, but a low mean error with a clear edge pattern is still the worse choice — that pattern biases the geometry Kalibr recovers even though the average looks fine. For a lens this wide, `equidistant` more often wins, but that's a prior this comparison is meant to override when the data disagrees.
 
 ## Step 3: Get a target.yaml
 
@@ -117,42 +120,42 @@ kalibr_calibrate_imu_camera \
     --target path/to/target.yaml
 ```
 
-**Output**: `camchain-imucam.yaml` with refined camera intrinsics/distortion and camera-IMU extrinsics (rotation + translation between the two sensors), plus a PDF report with reprojection error plots.
+Output: `camchain-imucam.yaml` with refined camera intrinsics/distortion and camera-IMU extrinsics (rotation + translation between the two sensors), plus a PDF report with reprojection error plots.
 
 ## Troubleshooting
 
 ### "No clean start/end boundary found" during `--trim_imu_static`
 
-**Causes**:
+Causes:
 
 - The static capture isn't actually static somewhere in the scanned window (someone bumped the table, vibration from a nearby device)
 - `--max_scan_s` (default 1800s = 30 min) is shorter than how long the motion actually takes to settle
 
-**Solutions**:
+Solutions:
 
 1. Inspect `imu_raw.csv` by hand around the expected settle point
 2. If motion genuinely takes longer than 30 min to settle, this isn't exposed as a CLI flag currently — call `auto_trim_static_imu()` directly from Python with a larger `max_scan_s`
 
 ### Reprojection error stays high after calibration
 
-**Causes**:
+Causes:
 
 - `camchain.yaml`'s seed intrinsics are far enough off that Kalibr's optimizer doesn't converge well
 - Wide-FOV lens forced into `pinhole`+`radtan` when `equidistant` fits better
 
-**Solutions**:
+Solutions:
 
 1. Check for `equidistant` comments in `camchain.yaml` (added automatically when FOV > 90°) and re-run with `distortion_model: equidistant` if present
 2. Re-run `kalibr_calibrate_camera` (camera-only, no IMU) first to validate intrinsics converge before adding IMU calibration on top
 
 ### IMU calibration looks noisy / extrinsics don't stabilize
 
-**Causes**:
+Causes:
 
 - `imu.yaml` noise parameters underestimate real sensor noise (Allan variance run on too-short or not-fully-static data)
 - Not enough IMU excitation during the calibration-target capture (phone moved too slowly/smoothly)
 
-**Solutions**:
+Solutions:
 
 1. Re-derive `imu.yaml` from a longer static capture — several hours gives a more reliable Allan variance curve than a few minutes
 2. Re-capture the calibration-target session with more varied, deliberate rotation on all three axes (not just translation)
