@@ -6,6 +6,7 @@ from typing import Dict, List, Optional
 import numpy as np
 import pandas as pd
 
+from yuv_sensor.camera_calib import upright_camera_geometry
 from yuv_sensor.data_loader import SessionDataLoader
 from yuv_sensor.frame_extractor import extract_frames
 from yuv_sensor.frame_quality import export_quality_report, get_usable_frame_indices
@@ -111,26 +112,33 @@ class KalibrExporter:
         cfg = self.loader.session_config
         intrinsics = cfg.get("intrinsics")
         distortion = cfg.get("distortion")
-        active_array = cfg.get("pre_correction_active_array")
-        if not intrinsics or not distortion or not active_array:
-            print("camchain.yaml: session.json missing intrinsics/distortion/"
-                  "pre_correction_active_array, skipping")
+        if not intrinsics or not distortion or self.loader.frames_df.empty:
+            print("camchain.yaml: session.json missing intrinsics/distortion "
+                  "or session has no frames, skipping")
             return None
 
-        fx, fy, cx, cy = intrinsics[:4]
+        # cam0/ holds upright (rotated) frames, so describe that geometry,
+        # not the raw sensor frame session.json's intrinsics are expressed in.
+        first_frame = self.loader.frames_df.iloc[0]
+        geometry = upright_camera_geometry(
+            intrinsics,
+            distortion,
+            int(first_frame["width"]),
+            int(first_frame["height"]),
+            sensor_orientation=cfg.get("sensor_orientation", 0),
+            active_array=cfg.get("pre_correction_active_array"),
+        )
+        fx, fy, cx, cy = geometry.fx, geometry.fy, geometry.cx, geometry.cy
+        k1, k2, k3, p1, p2 = geometry.k1, geometry.k2, geometry.k3, geometry.p1, geometry.p2
+        width, height = geometry.width, geometry.height
         skew = intrinsics[4] if len(intrinsics) > 4 else 0.0
-        k1 = distortion[0] if len(distortion) > 0 else 0.0
-        k2 = distortion[1] if len(distortion) > 1 else 0.0
-        k3 = distortion[2] if len(distortion) > 2 else 0.0
-        p1 = distortion[3] if len(distortion) > 3 else 0.0
-        p2 = distortion[4] if len(distortion) > 4 else 0.0
-        _, _, width, height = active_array
         fov = cfg.get("fov_deg")
 
         lines = [
-            f"# Seed intrinsics for Kalibr, taken directly from "
-            f"{self.loader.session_path.name}/session.json",
-            "# (manufacturer-measured, not re-derived from checkerboard frames).",
+            f"# Seed intrinsics for Kalibr, from {self.loader.session_path.name}/session.json",
+            "# (manufacturer-measured, not re-derived from checkerboard frames),",
+            f"# scaled to the frame resolution and rotated for sensor_orientation="
+            f"{cfg.get('sensor_orientation', 0)} to match cam0/.",
             "# Not run through Kalibr yet -- sanity-check before use.",
         ]
         if k3:
@@ -162,7 +170,7 @@ class KalibrExporter:
             f"  intrinsics: [{fx}, {fy}, {cx}, {cy}]   # fx, fy, cx, cy",
             "  distortion_model: radtan",
             f"  distortion_coeffs: [{k1}, {k2}, {p1}, {p2}]  # k1, k2, p1, p2",
-            f"  resolution: [{int(width)}, {int(height)}]",
+            f"  resolution: [{width}, {height}]",
             "  rostopic: /cam0/image_raw",
             "",
         ]
@@ -183,6 +191,8 @@ class KalibrExporter:
         if self.loader.imu_df is None:
             print("imu0.csv: session has no imu.csv, skipping")
             return None
+
+        self.loader.validate_timestamps()
 
         imu = self.loader.imu_df
         accel = imu[imu["sensor"] == "accel"].sort_values("timestamp_ns", kind="stable")

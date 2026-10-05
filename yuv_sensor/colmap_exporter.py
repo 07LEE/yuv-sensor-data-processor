@@ -6,6 +6,7 @@ import numpy as np
 import pandas as pd
 from scipy.spatial.transform import Rotation
 
+from yuv_sensor.camera_calib import upright_camera_geometry
 from yuv_sensor.data_loader import SessionDataLoader
 from yuv_sensor.frame_extractor import extract_frames
 from yuv_sensor.frame_quality import export_quality_report, get_usable_frame_indices
@@ -123,9 +124,10 @@ class ColmapExporter:
         Format: CAMERA_ID, MODEL, WIDTH, HEIGHT, PARAMS...
         Using PINHOLE model: fx, fy, cx, cy
         """
-        intrinsics = self.loader.session_config.get("intrinsics")
-        width = self.loader.frames_df.iloc[0]["width"]
-        height = self.loader.frames_df.iloc[0]["height"]
+        cfg = self.loader.session_config
+        intrinsics = cfg.get("intrinsics")
+        raw_width = int(self.loader.frames_df.iloc[0]["width"])
+        raw_height = int(self.loader.frames_df.iloc[0]["height"])
 
         cameras_path = output_dir / "cameras.txt"
 
@@ -135,12 +137,28 @@ class ColmapExporter:
             f.write("# Number of cameras: 1\n")
 
             if intrinsics:
-                fx, fy, cx, cy = intrinsics[:4]
-                f.write(f"1 PINHOLE {int(width)} {int(height)} {fx} {fy} {cx} {cy}\n")
+                # images/ holds upright (rotated) frames, so describe that
+                # geometry, not the raw sensor frame the intrinsics are in.
+                geometry = upright_camera_geometry(
+                    intrinsics,
+                    cfg.get("distortion"),
+                    raw_width,
+                    raw_height,
+                    sensor_orientation=cfg.get("sensor_orientation", 0),
+                    active_array=cfg.get("pre_correction_active_array"),
+                )
+                f.write(
+                    f"1 PINHOLE {geometry.width} {geometry.height} "
+                    f"{geometry.fx} {geometry.fy} {geometry.cx} {geometry.cy}\n"
+                )
             else:
                 # Fallback: assume principal point at center, estimate focal length
+                if int(cfg.get("sensor_orientation", 0)) % 180 == 90:
+                    width, height = raw_height, raw_width
+                else:
+                    width, height = raw_width, raw_height
                 focal = width
-                f.write(f"1 PINHOLE {int(width)} {int(height)} {focal} {focal} {width/2} {height/2}\n")
+                f.write(f"1 PINHOLE {width} {height} {focal} {focal} {width/2} {height/2}\n")
 
         return cameras_path
 

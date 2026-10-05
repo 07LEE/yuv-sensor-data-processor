@@ -69,7 +69,7 @@ yuv-sensor --session_dir data/session_calib_target \
 This generates:
 
 - `output/kalibr/cam0/` — raw RGB frames named `<timestamp_ns>.png`, not undistorted (Kalibr fits its own distortion model)
-- `output/kalibr/camchain.yaml` — seed intrinsics reformatted from `session.json`'s own calibration
+- `output/kalibr/camchain.yaml` — seed intrinsics reformatted from `session.json`'s own calibration, scaled and rotated to match the upright `cam0/` images
 - `output/kalibr/imu0.csv` — this session's IMU log in `kalibr_bagcreater`'s format: `timestamp,omega_x,omega_y,omega_z,alpha_x,alpha_y,alpha_z`, one row per gyro sample with the accelerometer linearly interpolated onto its timestamp (gyro samples outside the accelerometer's time range are dropped)
 - `output/kalibr/kalibr_export_metadata.json` — export metadata
 - `output/kalibr/frame_quality_report.json` — per-frame sharpness and exposure/white-balance convergence state, always written

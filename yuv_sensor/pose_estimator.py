@@ -8,6 +8,8 @@ import pandas as pd
 from typing import Dict, Tuple, Optional, List
 from scipy.spatial.transform import Rotation
 
+from yuv_sensor.data_loader import validate_timestamp_compatibility
+
 
 @numba.njit(cache=True)
 def _integrate_trajectory(
@@ -155,6 +157,8 @@ class PoseEstimator:
 
         if accel_data.empty or gyro_data.empty:
             return self._zero_trajectory(frames_df)
+
+        validate_timestamp_compatibility(frames_df, imu_df)
 
         r_init = initial_rotation if initial_rotation is not None else np.eye(3)
 

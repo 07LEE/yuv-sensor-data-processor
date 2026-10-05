@@ -413,7 +413,7 @@ Returns:
 
 Generated Files:
 
-- `cameras.txt`: Camera intrinsics (PINHOLE model), reference only
+- `cameras.txt`: Camera intrinsics (PINHOLE model) for the exported upright images, reference only. Intrinsics are scaled from `pre_correction_active_array` to the frame resolution and rotated for `sensor_orientation` (width/height swap and fx/fy, cx/cy transform for 90/270)
 - `images.txt`: Reference only. COLMAP format (IMAGE_ID, QW, QX, QY, QZ, TX, TY, TZ, CAMERA_ID, NAME) — only frames that pass the quality filter (IMAGE_ID keeps `frame_idx + 1`, so gaps from excluded frames are expected and fine)
 - `pose_priors.json`: IMU trajectory (reference only), same filtered frame set as `images.txt`
 - `colmap_export_metadata.json`: Export metadata and COLMAP commands
@@ -492,7 +492,7 @@ Returns:
 
 Generated Files:
 
-- `camchain.yaml`: Seed intrinsics reformatted from session.json's own calibration (not re-derived from checkerboard frames). `session.json`'s 5-coefficient distortion and any lens skew don't fit Kalibr's 4-param `radtan` model — both are dropped, flagged in a comment in the written file rather than silently discarded. Wide-FOV sessions (>90°) also get a comment suggesting Kalibr's `equidistant` (fisheye) model as a comparison.
+- `camchain.yaml`: Seed intrinsics reformatted from session.json's own calibration (not re-derived from checkerboard frames), scaled to the frame resolution and rotated for `sensor_orientation` so they describe the upright `cam0/` images (resolution is swapped for 90/270, and `p1`/`p2` are transformed with the rotation). `session.json`'s 5-coefficient distortion and any lens skew don't fit Kalibr's 4-param `radtan` model — both are dropped, flagged in a comment in the written file rather than silently discarded. Wide-FOV sessions (>90°) also get a comment suggesting Kalibr's `equidistant` (fisheye) model as a comparison.
 - `imu0.csv`: `timestamp,omega_x,omega_y,omega_z,alpha_x,alpha_y,alpha_z` (timestamp in ns). One row per gyro sample, with the accelerometer linearly interpolated onto the gyro timestamp; gyro samples outside the accelerometer time range are dropped
 - `kalibr_export_metadata.json`: Export metadata
 - `frame_quality_report.json`: Per-frame sharpness/ae_state/awb_state/af_state and which frames were excluded and why

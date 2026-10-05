@@ -32,4 +32,4 @@ Pre-processed dataset mapping each frame timestamp to matched exposure settings 
 
 - YUV Decoding: Convert to RGB by reflecting chroma_layout (planar, semi_planar_uv, semi_planar_vu) and row strides (luma_row_stride, chroma_row_stride) with padding bytes recorded in frames.csv.
 - Image Rotation and Undistortion: Apply sensor_orientation rotation angle from session.json and perform lens distortion correction using intrinsics and distortion parameters.
-- Timestamp Synchronization: Use nanosecond timestamp (timestamp_ns) as the primary key when joining camera frames, IMU, and exposure metadata.
+- Timestamp Synchronization: Use nanosecond timestamp (timestamp_ns) as the primary key when joining camera frames, IMU, and exposure metadata. Camera and IMU timestamps must share one time base; if the frame and IMU time ranges do not overlap (or frames extend more than 1 s beyond the IMU log), synchronization, IMU-derived trajectories and the Kalibr IMU export raise `TimestampDomainError` instead of producing misaligned output.

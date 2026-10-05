@@ -10,6 +10,63 @@ from yuv_sensor.yuv_decoder import decode_yuv420_888
 from yuv_sensor.camera_calib import CameraCalibration
 
 
+class TimestampDomainError(ValueError):
+    """Raised when camera and IMU timestamps cannot be safely compared."""
+
+
+def validate_timestamp_compatibility(
+    frames_df: Optional[pd.DataFrame],
+    imu_df: Optional[pd.DataFrame],
+    tolerance_s: float = 1.0,
+) -> None:
+    """Checks that camera and IMU timestamps look like one shared time domain.
+
+    The session logs carry only raw timestamp_ns values, with no record of
+    the clock each stream used. Two streams on different clocks (e.g. camera
+    on a realtime clock, IMU on a boot-time clock) differ by an offset far
+    larger than a session, so their [first, last] ranges do not overlap.
+    Every frame is then matched against the wrong IMU samples, or none,
+    without any error. This catches that case before synchronization.
+
+    Does nothing when either table is missing or empty, since there is
+    nothing to synchronize.
+
+    Args:
+        frames_df: Frames table with a timestamp_ns column.
+        imu_df: IMU table with a timestamp_ns column.
+        tolerance_s: Slack, in seconds, allowed when a frame range edge falls
+            outside the IMU range (frames may start just before the first
+            IMU sample or end just after the last one).
+
+    Raises:
+        TimestampDomainError: If the frame and IMU time ranges are disjoint
+            or one extends beyond the other by more than tolerance_s.
+    """
+    if frames_df is None or imu_df is None or frames_df.empty or imu_df.empty:
+        return
+
+    frame_ts = frames_df["timestamp_ns"]
+    imu_ts = imu_df["timestamp_ns"]
+    f_min, f_max = int(frame_ts.min()), int(frame_ts.max())
+    i_min, i_max = int(imu_ts.min()), int(imu_ts.max())
+    tol_ns = int(tolerance_s * 1e9)
+
+    if f_max < i_min - tol_ns or f_min > i_max + tol_ns:
+        raise TimestampDomainError(
+            "Camera and IMU timestamps do not overlap, so they are probably on "
+            f"different clocks: frames [{f_min}, {f_max}] ns, IMU [{i_min}, {i_max}] ns "
+            f"(offset {(f_min - i_min) / 1e9:.3f} s at start). Refusing to synchronize."
+        )
+
+    if f_min < i_min - tol_ns or f_max > i_max + tol_ns:
+        raise TimestampDomainError(
+            "Camera frames extend more than "
+            f"{tolerance_s:g} s beyond the IMU log: frames [{f_min}, {f_max}] ns, "
+            f"IMU [{i_min}, {i_max}] ns. The streams may not share a time base "
+            "or the IMU log is incomplete. Refusing to synchronize."
+        )
+
+
 class SessionDataLoader:
     """Loader for session data including frames.csv, capture.csv, imu.csv, session.json, and raw .yuv files."""
 
@@ -41,6 +98,7 @@ class SessionDataLoader:
         # Building these once instead of re-filtering the full table on every
         # call turns per-frame lookups from O(session length) into O(log
         # session length).
+        self._timestamps_validated = False
         self._imu_cache_built = False
         self._imu_cache: Optional[Dict[str, Any]] = None
         self._capture_cache_built = False
@@ -104,6 +162,17 @@ class SessionDataLoader:
 
         return rgb
 
+    def validate_timestamps(self) -> None:
+        """Raises TimestampDomainError if frame and IMU timestamps are incompatible.
+
+        Runs the check once per loader; per-frame callers such as
+        get_synchronized_imu would otherwise rescan both tables every call.
+        """
+        if self._timestamps_validated:
+            return
+        validate_timestamp_compatibility(self.frames_df, self.imu_df)
+        self._timestamps_validated = True
+
     def _ensure_imu_cache(self) -> None:
         """Builds the per-sensor timestamp-sorted IMU cache once, lazily."""
         if self._imu_cache_built:
@@ -162,7 +231,11 @@ class SessionDataLoader:
 
         Returns:
             Dict containing 'accel' and 'gyro' DataFrames centered around timestamp_ns.
+
+        Raises:
+            TimestampDomainError: If frame and IMU timestamps are incompatible.
         """
+        self.validate_timestamps()
         window_ns = int(time_window_ms * 1e6)
         return self.get_imu_in_range(timestamp_ns - window_ns, timestamp_ns + window_ns)
 
