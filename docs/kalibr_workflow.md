@@ -17,9 +17,9 @@ Checkerboard/AprilGrid capture (phone moving in view of the target)
     ↓
 KalibrExporter (--export_kalibr)
     ↓
-images/ + camchain.yaml (seed intrinsics) + imu.csv
+cam0/ + imu0.csv + camchain.yaml (seed intrinsics)
     ↓
-kalibr_bagcreater (images/ + imu.csv → rosbag)
+kalibr_bagcreater (cam0/ + imu0.csv → rosbag)
     ↓
 kalibr_calibrate_imu_camera (bag + camchain.yaml + imu.yaml + target.yaml)
     ↓
@@ -68,9 +68,9 @@ yuv-sensor --session_dir data/session_calib_target \
 
 This generates:
 
-- `output/kalibr/images/` — raw RGB frames, not undistorted (Kalibr fits its own distortion model)
+- `output/kalibr/cam0/` — raw RGB frames named `<timestamp_ns>.png`, not undistorted (Kalibr fits its own distortion model)
 - `output/kalibr/camchain.yaml` — seed intrinsics reformatted from `session.json`'s own calibration
-- `output/kalibr/imu.csv` — this session's IMU log, copied as-is
+- `output/kalibr/imu0.csv` — this session's IMU log in `kalibr_bagcreater`'s format: `timestamp,omega_x,omega_y,omega_z,alpha_x,alpha_y,alpha_z`, one row per gyro sample with the accelerometer linearly interpolated onto its timestamp (gyro samples outside the accelerometer's time range are dropped)
 - `output/kalibr/kalibr_export_metadata.json` — export metadata
 - `output/kalibr/frame_quality_report.json` — per-frame sharpness and exposure/white-balance convergence state, always written
 
@@ -108,7 +108,7 @@ kalibr_bagcreater \
     --output-bag output/kalibr/calib.bag
 ```
 
-This expects `output/kalibr/images/` and `output/kalibr/imu.csv` in the layout `KalibrExporter` already produces.
+This reads `output/kalibr/cam0/` and `output/kalibr/imu0.csv`, which `KalibrExporter` produces in exactly that layout, so no manual conversion is needed.
 
 ## Step 5: Run kalibr_calibrate_imu_camera
 
