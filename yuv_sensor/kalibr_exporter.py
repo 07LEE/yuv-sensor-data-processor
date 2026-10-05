@@ -184,6 +184,8 @@ class KalibrExporter:
             print("imu0.csv: session has no imu.csv, skipping")
             return None
 
+        self.loader.validate_timestamps()
+
         imu = self.loader.imu_df
         accel = imu[imu["sensor"] == "accel"].sort_values("timestamp_ns", kind="stable")
         gyro = imu[imu["sensor"] == "gyro"].sort_values("timestamp_ns", kind="stable")

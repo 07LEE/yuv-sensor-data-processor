@@ -28,6 +28,8 @@ class DataProcessor:
         Returns:
             List of synchronized frame dictionaries.
         """
+        self.loader.validate_timestamps()
+
         sync_frames: List[Dict[str, Any]] = []
         total_frames = self.loader.get_frame_count()
 
