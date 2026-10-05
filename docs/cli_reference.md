@@ -18,7 +18,7 @@ Options:
   --process_sync                 Generate synchronized_dataset.json (default: True; skipped by
                                   --export_colmap/--export_kalibr/--trim_imu_static, which are
                                   standalone actions)
-  --export_colmap                Standalone action: export in COLMAP format with IMU pose priors
+  --export_colmap                Standalone action: export in COLMAP format with IMU-estimated reference poses
   --colmap_output_dir STR        Output directory for COLMAP workspace (default: session_dir/colmap)
   --export_kalibr                Standalone action: export Kalibr camera-IMU calibration input
                                   (cam0/ + imu0.csv + camchain.yaml)

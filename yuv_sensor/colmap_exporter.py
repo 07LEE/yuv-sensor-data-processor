@@ -1,4 +1,4 @@
-"""Exporter for COLMAP-compatible input format with camera poses from IMU."""
+"""Exporter for COLMAP-format images, cameras.txt, images.txt and IMU-estimated reference poses."""
 
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -14,7 +14,13 @@ from yuv_sensor.pose_estimator import PoseEstimator
 
 
 class ColmapExporter:
-    """Exports session data in COLMAP-compatible format with IMU-based pose priors."""
+    """Exports session data in COLMAP format alongside IMU-estimated reference poses.
+
+    cameras.txt, images.txt and pose_priors.json are reference data: the
+    documented COLMAP workflow (feature_extractor, sequential_matcher,
+    mapper) does not read them, and the mapper estimates poses from the
+    images alone. See docs/colmap_workflow.md.
+    """
 
     def __init__(self, loader: SessionDataLoader):
         """Initialize ColmapExporter with a SessionDataLoader.
@@ -185,12 +191,12 @@ class ColmapExporter:
         return images_path
 
     def _export_pose_priors_json(self, output_dir: Path, trajectory: Dict, usable_indices: List[int]) -> Path:
-        """Export pose_priors.json with IMU-derived poses for reference."""
+        """Export pose_priors.json with IMU-derived poses for reference only."""
         pose_priors_path = output_dir / "pose_priors.json"
 
         priors = {
             "source": "IMU-based trajectory estimation",
-            "note": "These are initial pose estimates; COLMAP will refine them via feature matching.",
+            "note": "Reference only: dead-reckoned from IMU integration, which drifts. The documented COLMAP workflow does not read this file; the mapper estimates poses from the images alone.",
             "frames": []
         }
 
@@ -241,7 +247,7 @@ class ColmapExporter:
             "total_frames": len(self.loader.frames_df),
             "image_format": image_format,
             "undistorted": undistort,
-            "poses_source": "IMU trajectory estimation (initial priors for COLMAP)",
+            "poses_source": "IMU trajectory estimation (reference only, not read by the COLMAP commands below)",
             "colmap_workflow": [
                 "colmap feature_extractor --database_path database.db --image_path images",
                 "colmap sequential_matcher --database_path database.db",

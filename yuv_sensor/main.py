@@ -36,7 +36,7 @@ def main():
     parser.add_argument("--camera_calib_output_dir", type=str, default=None, help="Directory for --calibrate_camera output (defaults to session_dir/camera_calibration)")
 
     mode_group = parser.add_mutually_exclusive_group()
-    mode_group.add_argument("--export_colmap", action="store_true", default=False, help="Standalone action: export data in COLMAP format with IMU-based pose priors, skipping --process_sync and normal frame extraction")
+    mode_group.add_argument("--export_colmap", action="store_true", default=False, help="Standalone action: export data in COLMAP format with IMU-estimated reference poses, skipping --process_sync and normal frame extraction")
     mode_group.add_argument("--export_kalibr", action="store_true", default=False, help="Standalone action: export data as Kalibr camera-IMU calibration input (cam0/ + imu0.csv + camchain.yaml), skipping --process_sync and normal frame extraction")
     mode_group.add_argument("--trim_imu_static", type=str, choices=["start", "end", "both"], default=None, help="Standalone action: trim motion off a static IMU-only capture (for Allan variance / Kalibr imu.yaml), skipping --process_sync and normal frame extraction; writes trimmed imu.csv, imu_raw.csv, and a trim report")
     mode_group.add_argument("--calibrate_camera", action="store_true", default=False, help="Standalone action: calibrate camera intrinsics from a checkerboard capture using OpenCV directly (no Kalibr/rosbag needed), skipping --process_sync and normal frame extraction; requires --checkerboard_size")
@@ -179,7 +179,7 @@ def main():
 
     # Export to COLMAP format if requested
     if args.export_colmap:
-        print("\nExporting to COLMAP format with IMU-based pose priors...")
+        print("\nExporting to COLMAP format with IMU-estimated reference poses...")
         print("(standalone action: skipping --process_sync and normal frame extraction for this run)")
         if args.colmap_output_dir is None:
             colmap_dir = session_path / "colmap"
