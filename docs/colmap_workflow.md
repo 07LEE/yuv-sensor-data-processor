@@ -63,7 +63,7 @@ yuv-sensor --session_dir data/session_419864820 \
 This generates:
 
 - `output/colmap/images/` — RGB frames (named by timestamp)
-- `output/colmap/cameras.txt` — Camera intrinsics (PINHOLE model), reference only
+- `output/colmap/cameras.txt` — Camera intrinsics (PINHOLE model) matching the exported upright images, reference only
 - `output/colmap/images.txt` — Image list with IMU-estimated poses, reference only
 - `output/colmap/pose_priors.json` — IMU trajectory, reference only
 - `output/colmap/colmap_export_metadata.json` — Export metadata
