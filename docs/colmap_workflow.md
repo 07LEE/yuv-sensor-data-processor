@@ -1,10 +1,10 @@
 # COLMAP Workflow Guide
 
-End-to-end guide for preparing mobile scan data for 3D reconstruction using COLMAP with IMU-based pose priors.
+End-to-end guide for preparing mobile scan data for 3D reconstruction using COLMAP, with IMU-estimated poses exported alongside as reference data.
 
 ## Overview
 
-The workflow combines mobile sensor data (images + IMU) with COLMAP's structure-from-motion pipeline:
+The workflow exports mobile sensor data (images + IMU) in COLMAP format and runs COLMAP's structure-from-motion pipeline on the images:
 
 ```
 Mobile Scan Data
@@ -14,17 +14,23 @@ YUV Frames + IMU Logs (SessionDataLoader)
 Estimate Camera Trajectory (PoseEstimator)
     ↓
 Export COLMAP Format (ColmapExporter)
-    ├─ images/ (RGB frames)
-    ├─ cameras.txt (intrinsics)
-    ├─ images.txt (initial poses)
-    └─ pose_priors.json (IMU trajectory reference)
+    ├─ images/ (RGB frames)            ← read by COLMAP
+    ├─ cameras.txt (intrinsics)        ← reference, not read by the steps below
+    ├─ images.txt (IMU-estimated poses) ← reference, not read by the steps below
+    └─ pose_priors.json (IMU trajectory) ← reference, not read by the steps below
     ↓
-COLMAP: Feature Extraction & Matching
+COLMAP: Feature Extraction & Matching (images/ only)
     ↓
-COLMAP: Incremental Mapper (refines poses via SfM)
+COLMAP: Incremental Mapper (estimates poses from the images alone)
     ↓
-Output: Sparse Point Cloud + Refined Camera Poses
+Output: Sparse Point Cloud + Camera Poses
 ```
+
+### What the exported pose files are for
+
+The commands in Steps 2-4 (`feature_extractor`, `sequential_matcher`, `mapper`) read only `images/`. They do not read `cameras.txt`, `images.txt`, or `pose_priors.json`, so the IMU-estimated poses have no effect on the reconstruction. The mapper starts from no pose information and estimates every pose from feature matches.
+
+The poses are dead-reckoned by integrating gyro and accelerometer data, so position error grows quickly with time. Treat them as reference data, for example to sanity-check the scan trajectory or to compare against the poses COLMAP recovers, not as ground truth.
 
 ## Prerequisites
 
@@ -57,9 +63,9 @@ yuv-sensor --session_dir data/session_419864820 \
 This generates:
 
 - `output/colmap/images/` — RGB frames (named by timestamp)
-- `output/colmap/cameras.txt` — Camera intrinsics (PINHOLE model)
-- `output/colmap/images.txt` — Image list with IMU-estimated poses
-- `output/colmap/pose_priors.json` — IMU trajectory (reference only)
+- `output/colmap/cameras.txt` — Camera intrinsics (PINHOLE model), reference only
+- `output/colmap/images.txt` — Image list with IMU-estimated poses, reference only
+- `output/colmap/pose_priors.json` — IMU trajectory, reference only
 - `output/colmap/colmap_export_metadata.json` — Export metadata
 - `output/colmap/frame_quality_report.json` — Per-frame sharpness and exposure/white-balance convergence state, always written (see below)
 
@@ -213,7 +219,7 @@ Causes:
 
 Solutions:
 
-1. Check pose_priors.json — do poses look reasonable?
+1. Check pose_priors.json for a sanity check of the scan trajectory (COLMAP does not use it, so it cannot cause this failure)
 2. Verify images are in focus and well-lit — check `frame_quality_report.json` (always generated in Step 1) for blurry or not-yet-converged frames, and re-export with `--min_sharpness`/`--require_converged` if it finds a lot of them
 3. Try exhaustive matching instead of sequential
 4. Reduce `--SequentialMatching.overlap` to 3 or 1

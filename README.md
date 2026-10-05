@@ -30,7 +30,7 @@ pip install -e .
 yuv-sensor --session_dir data/session_419864820
 ```
 
-### Export to COLMAP format with IMU-based pose priors
+### Export to COLMAP format with IMU-estimated reference poses
 
 ```bash
 yuv-sensor --session_dir data/session_419864820 --export_colmap --colmap_output_dir output/colmap
@@ -46,7 +46,7 @@ For all command-line flags and defaults, see [CLI Reference](docs/cli_reference.
 - Camera Calibration: Apply lens distortion correction and sensor orientation rotation
 - Multi-sensor Synchronization: Align camera frames, IMU (accel/gyro), and exposure metadata by nanosecond timestamps
 - IMU-based Pose Estimation: Integrate accelerometer and gyroscope data to estimate initial camera trajectory
-- COLMAP Integration: Export images and camera parameters in COLMAP-compatible format with pose priors for 3D reconstruction
+- COLMAP Integration: Export images and camera parameters in COLMAP-compatible format, with IMU-estimated poses as reference data (not read by the documented COLMAP commands)
 - Kalibr Export: Export cam0/, imu0.csv, and camchain.yaml as input for Kalibr camera-IMU calibration
 - Static IMU Trim + imu.yaml: Auto-trim motion off the edges of a static IMU capture and derive Kalibr's imu.yaml (noise_density / random_walk) from it via Allan variance
 - Checkerboard Camera Calibration: Calibrate camera intrinsics directly from a checkerboard capture using OpenCV — no Kalibr/rosbag needed, a quick pre-check against session.json's own intrinsics

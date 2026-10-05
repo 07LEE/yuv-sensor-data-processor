@@ -334,7 +334,7 @@ for frame_idx, pose in trajectory.items():
         print(f"Frame {frame_idx}: pos={pose['position']}, quat={pose['quaternion']}")
 ```
 
-Note: These are approximate trajectories useful as initialization hints. COLMAP's feature-based SfM will refine them significantly.
+Note: These are approximate, dead-reckoned trajectories and drift over time. The documented COLMAP workflow does not read them; see [COLMAP Workflow](colmap_workflow.md#what-the-exported-pose-files-are-for).
 
 #### `get_frame_poses(trajectory: Dict[int, Dict], frames_df: pd.DataFrame) -> List[Tuple]`
 
@@ -359,7 +359,7 @@ for idx, pos, quat in poses[:5]:
 
 ## ColmapExporter
 
-Exports session data in COLMAP-compatible format with IMU-based pose priors.
+Exports session data in COLMAP format, with IMU-estimated poses as reference data. The documented COLMAP workflow (`feature_extractor`, `sequential_matcher`, `mapper`) reads only `images/`; `cameras.txt`, `images.txt` and `pose_priors.json` are not read by it. See [COLMAP Workflow](colmap_workflow.md#what-the-exported-pose-files-are-for).
 
 ### Constructor
 
@@ -413,9 +413,9 @@ Returns:
 
 Generated Files:
 
-- `cameras.txt`: Camera intrinsics (PINHOLE model)
-- `images.txt`: COLMAP format (IMAGE_ID, QW, QX, QY, QZ, TX, TY, TZ, CAMERA_ID, NAME) — only frames that pass the quality filter (IMAGE_ID keeps `frame_idx + 1`, so gaps from excluded frames are expected and fine)
-- `pose_priors.json`: IMU trajectory (reference), same filtered frame set as `images.txt`
+- `cameras.txt`: Camera intrinsics (PINHOLE model), reference only
+- `images.txt`: Reference only. COLMAP format (IMAGE_ID, QW, QX, QY, QZ, TX, TY, TZ, CAMERA_ID, NAME) — only frames that pass the quality filter (IMAGE_ID keeps `frame_idx + 1`, so gaps from excluded frames are expected and fine)
+- `pose_priors.json`: IMU trajectory (reference only), same filtered frame set as `images.txt`
 - `colmap_export_metadata.json`: Export metadata and COLMAP commands
 - `frame_quality_report.json`: Per-frame sharpness/ae_state/awb_state/af_state and which frames were excluded and why
 - `images/`: Extracted RGB frames (filtered)
