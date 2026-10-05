@@ -1,7 +1,10 @@
-"""Exporter for Kalibr camera-IMU calibration input (images + camchain.yaml + imu.csv)."""
+"""Exporter for Kalibr camera-IMU calibration input (cam0/ + imu0.csv + camchain.yaml)."""
 
 from pathlib import Path
 from typing import Dict, List, Optional
+
+import numpy as np
+import pandas as pd
 
 from yuv_sensor.data_loader import SessionDataLoader
 from yuv_sensor.frame_extractor import extract_frames
@@ -15,6 +18,10 @@ class KalibrExporter:
     Unlike ColmapExporter, images are extracted WITHOUT undistortion: Kalibr
     fits its own distortion model from the raw (distorted) frames, and an
     already-undistorted image would get run through that fit a second time.
+
+    The output layout is what `kalibr_bagcreater --folder` reads directly:
+    cam0/<timestamp_ns>.png and imu0.csv (one row per gyro sample with the
+    accelerometer linearly interpolated onto its timestamp).
     """
 
     def __init__(self, loader: SessionDataLoader):
@@ -34,16 +41,16 @@ class KalibrExporter:
         min_sharpness: Optional[float] = None,
         require_converged: bool = False,
     ) -> Dict[str, Optional[Path]]:
-        """Export images, camchain.yaml, and imu.csv to a Kalibr input directory.
+        """Export cam0/, imu0.csv, and camchain.yaml to a Kalibr input directory.
 
         Args:
             output_dir: Target directory for the Kalibr input set.
-            extract_images: Whether to extract images to output_dir/images/
+            extract_images: Whether to extract images to output_dir/cam0/
             image_format: Output image format (jpg or png). png avoids
                 re-compressing frames Kalibr will run corner detection on.
             max_frames: Cap on frames extracted, or None for all of them.
             min_sharpness: Exclude frames with frames.csv `sharpness` below
-                this from images/ (blurry frames just fail Kalibr's own
+                this from cam0/ (blurry frames just fail Kalibr's own
                 corner detection anyway). A frame_quality_report.json is
                 always written regardless of whether this is set. None
                 (default) excludes nothing.
@@ -55,6 +62,7 @@ class KalibrExporter:
             Dict mapping output name to path (camchain_yaml, imu_csv,
             images_dir, metadata_json, quality_report_json). A value is
             None if that part was skipped (e.g. no imu.csv on this session).
+            imu_csv points at the written imu0.csv.
         """
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
@@ -78,7 +86,7 @@ class KalibrExporter:
                 require_converged=require_converged,
                 max_frames=max_frames,
             )
-            images_dir = output_dir / "images"
+            images_dir = output_dir / "cam0"
             images_dir.mkdir(parents=True, exist_ok=True)
             self._extract_images(images_dir, image_format, usable_indices)
 
@@ -164,12 +172,37 @@ class KalibrExporter:
         return path
 
     def _export_imu_csv(self, output_dir: Path) -> Optional[Path]:
-        """Copy this session's imu.csv into the Kalibr input directory as-is."""
+        """Write imu0.csv in the layout kalibr_bagcreater reads.
+
+        Columns are timestamp (ns), omega_x/y/z (gyro), alpha_x/y/z (accel).
+        The session logs accel and gyro as separate rows at their own
+        timestamps, so each gyro sample gets the accelerometer linearly
+        interpolated onto its timestamp. Gyro samples outside the accel time
+        range are dropped rather than extrapolated.
+        """
         if self.loader.imu_df is None:
-            print("imu.csv: session has no imu.csv, skipping")
+            print("imu0.csv: session has no imu.csv, skipping")
             return None
-        path = output_dir / "imu.csv"
-        self.loader.imu_df.to_csv(path, index=False)
+
+        imu = self.loader.imu_df
+        accel = imu[imu["sensor"] == "accel"].sort_values("timestamp_ns", kind="stable")
+        gyro = imu[imu["sensor"] == "gyro"].sort_values("timestamp_ns", kind="stable")
+        if len(accel) < 2 or len(gyro) == 0:
+            print("imu0.csv: need accel and gyro samples in imu.csv, skipping")
+            return None
+
+        accel_ts = accel["timestamp_ns"].to_numpy()
+        gyro = gyro[(gyro["timestamp_ns"] >= accel_ts[0]) & (gyro["timestamp_ns"] <= accel_ts[-1])]
+        gyro_ts = gyro["timestamp_ns"].to_numpy()
+
+        merged = pd.DataFrame({"timestamp": gyro_ts})
+        for axis in ("x", "y", "z"):
+            merged[f"omega_{axis}"] = gyro[axis].to_numpy()
+        for axis in ("x", "y", "z"):
+            merged[f"alpha_{axis}"] = np.interp(gyro_ts, accel_ts, accel[axis].to_numpy())
+
+        path = output_dir / "imu0.csv"
+        merged.to_csv(path, index=False)
         return path
 
     def _extract_images(self, images_dir: Path, image_format: str, indices: List[int]) -> None:

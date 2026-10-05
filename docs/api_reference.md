@@ -465,26 +465,26 @@ exporter = KalibrExporter(loader)
 
 #### `export_to_directory(output_dir: Path, extract_images: bool = True, image_format: str = "png", max_frames: Optional[int] = None, min_sharpness: Optional[float] = None, require_converged: bool = False) -> Dict[str, Optional[Path]]`
 
-Exports images, camchain.yaml, and imu.csv to a Kalibr input directory.
+Exports cam0/, imu0.csv, and camchain.yaml to a Kalibr input directory in the layout `kalibr_bagcreater --folder` reads.
 
 Args:
 
 - `output_dir` (Path or str): Target directory for the Kalibr input set
-- `extract_images` (bool): Extract YUV → RGB images to output_dir/images/ (default: True)
+- `extract_images` (bool): Extract YUV → RGB images to output_dir/cam0/ (default: True)
 - `image_format` (str): "jpg" or "png" (default: "png" — avoids re-compressing frames Kalibr will run corner detection on)
 - `max_frames` (int, optional): Cap on frames extracted, or None for all of them
-- `min_sharpness` (float, optional): Exclude frames with frames.csv `sharpness` below this from `images/` (blurry frames just fail Kalibr's own corner detection anyway). `frame_quality_report.json` is always written regardless. Default `None` excludes nothing — see [Frame Quality Filtering](#frame-quality-filtering)
+- `min_sharpness` (float, optional): Exclude frames with frames.csv `sharpness` below this from `cam0/` (blurry frames just fail Kalibr's own corner detection anyway). `frame_quality_report.json` is always written regardless. Default `None` excludes nothing — see [Frame Quality Filtering](#frame-quality-filtering)
 - `require_converged` (bool): Also exclude frames whose nearest capture.csv row has `ae_state`/`awb_state` outside `{CONVERGED, LOCKED}` (default: False)
 
 Returns:
 
-- `Dict[str, Optional[Path]]`: Value is `None` for a part that was skipped (e.g. no imu.csv on this session)
+- `Dict[str, Optional[Path]]`: Value is `None` for a part that was skipped (e.g. no imu.csv on this session); `imu_csv` points at `imu0.csv`
 
   ```python
   {
     "camchain_yaml": Path("output/camchain.yaml"),
-    "imu_csv": Path("output/imu.csv"),
-    "images_dir": Path("output/images"),
+    "imu_csv": Path("output/imu0.csv"),
+    "images_dir": Path("output/cam0"),
     "metadata_json": Path("output/kalibr_export_metadata.json"),
     "quality_report_json": Path("output/frame_quality_report.json")
   }
@@ -493,10 +493,10 @@ Returns:
 Generated Files:
 
 - `camchain.yaml`: Seed intrinsics reformatted from session.json's own calibration (not re-derived from checkerboard frames). `session.json`'s 5-coefficient distortion and any lens skew don't fit Kalibr's 4-param `radtan` model — both are dropped, flagged in a comment in the written file rather than silently discarded. Wide-FOV sessions (>90°) also get a comment suggesting Kalibr's `equidistant` (fisheye) model as a comparison.
-- `imu.csv`: Copied as-is from the session
+- `imu0.csv`: `timestamp,omega_x,omega_y,omega_z,alpha_x,alpha_y,alpha_z` (timestamp in ns). One row per gyro sample, with the accelerometer linearly interpolated onto the gyro timestamp; gyro samples outside the accelerometer time range are dropped
 - `kalibr_export_metadata.json`: Export metadata
 - `frame_quality_report.json`: Per-frame sharpness/ae_state/awb_state/af_state and which frames were excluded and why
-- `images/`: Extracted RGB frames (filtered), not undistorted
+- `cam0/`: Extracted RGB frames named `<timestamp_ns>.png` (filtered), not undistorted
 
 Example:
 
@@ -511,10 +511,10 @@ result = exporter.export_to_directory(
 )
 
 print(f"camchain.yaml: {result['camchain_yaml']}")
-print(f"imu.csv: {result['imu_csv']}")
+print(f"imu0.csv: {result['imu_csv']}")
 ```
 
-Note: Still needed before `kalibr_calibrate_imu_camera` can run: a `target.yaml` for the physical calibration board, an `imu.yaml` (see [`compute_imu_noise_params`](#compute_imu_noise_params) below), and packing `images/` + `imu.csv` into a rosbag. See [Kalibr Workflow](kalibr_workflow.md) for the full procedure.
+Note: Still needed before `kalibr_calibrate_imu_camera` can run: a `target.yaml` for the physical calibration board, an `imu.yaml` (see [`compute_imu_noise_params`](#compute_imu_noise_params) below), and packing `cam0/` + `imu0.csv` into a rosbag with `kalibr_bagcreater`. See [Kalibr Workflow](kalibr_workflow.md) for the full procedure.
 
 ## auto_trim_static_imu
 

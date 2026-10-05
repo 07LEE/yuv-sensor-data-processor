@@ -37,7 +37,7 @@ def main():
 
     mode_group = parser.add_mutually_exclusive_group()
     mode_group.add_argument("--export_colmap", action="store_true", default=False, help="Standalone action: export data in COLMAP format with IMU-based pose priors, skipping --process_sync and normal frame extraction")
-    mode_group.add_argument("--export_kalibr", action="store_true", default=False, help="Standalone action: export data as Kalibr camera-IMU calibration input (images + camchain.yaml + imu.csv), skipping --process_sync and normal frame extraction")
+    mode_group.add_argument("--export_kalibr", action="store_true", default=False, help="Standalone action: export data as Kalibr camera-IMU calibration input (cam0/ + imu0.csv + camchain.yaml), skipping --process_sync and normal frame extraction")
     mode_group.add_argument("--trim_imu_static", type=str, choices=["start", "end", "both"], default=None, help="Standalone action: trim motion off a static IMU-only capture (for Allan variance / Kalibr imu.yaml), skipping --process_sync and normal frame extraction; writes trimmed imu.csv, imu_raw.csv, and a trim report")
     mode_group.add_argument("--calibrate_camera", action="store_true", default=False, help="Standalone action: calibrate camera intrinsics from a checkerboard capture using OpenCV directly (no Kalibr/rosbag needed), skipping --process_sync and normal frame extraction; requires --checkerboard_size")
 
@@ -168,13 +168,13 @@ def main():
         print(f"\nKalibr export complete:")
         print(f"  Output directory: {kalibr_dir}")
         print(f"  camchain.yaml: {export_result['camchain_yaml']}")
-        print(f"  imu.csv: {export_result['imu_csv']}")
+        print(f"  imu0.csv: {export_result['imu_csv']}")
         print(f"  Images: {export_result['images_dir']}")
         print(f"  Frame quality report: {export_result['quality_report_json']}")
         print(f"\nStill needed before kalibr_calibrate_imu_camera can run:")
         print(f"  - a target.yaml for the physical calibration board")
         print(f"  - an imu.yaml (see --trim_imu_static on a separate static capture)")
-        print(f"  - packing images/ + imu.csv into a rosbag")
+        print(f"  - packing cam0/ + imu0.csv into a rosbag (kalibr_bagcreater --folder {kalibr_dir})")
         return
 
     # Export to COLMAP format if requested

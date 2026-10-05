@@ -21,7 +21,7 @@ Options:
   --export_colmap                Standalone action: export in COLMAP format with IMU pose priors
   --colmap_output_dir STR        Output directory for COLMAP workspace (default: session_dir/colmap)
   --export_kalibr                Standalone action: export Kalibr camera-IMU calibration input
-                                  (images + camchain.yaml + imu.csv)
+                                  (cam0/ + imu0.csv + camchain.yaml)
   --kalibr_output_dir STR        Output directory for Kalibr export (default: session_dir/kalibr)
   --trim_imu_static {start,end,both}
                                   Standalone action: trim motion off a static IMU-only capture and

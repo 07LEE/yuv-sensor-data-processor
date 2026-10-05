@@ -47,7 +47,7 @@ For all command-line flags and defaults, see [CLI Reference](docs/cli_reference.
 - Multi-sensor Synchronization: Align camera frames, IMU (accel/gyro), and exposure metadata by nanosecond timestamps
 - IMU-based Pose Estimation: Integrate accelerometer and gyroscope data to estimate initial camera trajectory
 - COLMAP Integration: Export images and camera parameters in COLMAP-compatible format with pose priors for 3D reconstruction
-- Kalibr Export: Export images, camchain.yaml, and imu.csv as input for Kalibr camera-IMU calibration
+- Kalibr Export: Export cam0/, imu0.csv, and camchain.yaml as input for Kalibr camera-IMU calibration
 - Static IMU Trim + imu.yaml: Auto-trim motion off the edges of a static IMU capture and derive Kalibr's imu.yaml (noise_density / random_walk) from it via Allan variance
 - Checkerboard Camera Calibration: Calibrate camera intrinsics directly from a checkerboard capture using OpenCV — no Kalibr/rosbag needed, a quick pre-check against session.json's own intrinsics
 - Frame Quality Filtering: Report (and optionally exclude) blurry or not-yet-converged frames using sharpness and exposure/white-balance state already recorded at capture time — no extra dependencies
