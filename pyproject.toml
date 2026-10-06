@@ -18,9 +18,16 @@ dependencies = [
     "numba>=0.59.0",
 ]
 
+[project.optional-dependencies]
+dev = ["pytest>=7.0"]
+
 [project.scripts]
 yuv-sensor = "yuv_sensor.main:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["yuv_sensor*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
