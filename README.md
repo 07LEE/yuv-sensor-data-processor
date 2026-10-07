@@ -36,6 +36,8 @@ yuv-sensor --session_dir data/session_419864820
 yuv-sensor --session_dir data/session_419864820 --export_colmap --colmap_output_dir output/colmap
 ```
 
+The IMU trajectory is an IMU-frame trajectory, so camera poses (`images.txt`) are only written when you also pass `--camera_imu_extrinsics extrinsics.json` (a 4x4 `T_cam_imu`, e.g. from Kalibr). Without it, `pose_priors.json` holds the IMU-frame poses only.
+
 For the full COLMAP walkthrough (feature extraction, matching, mapping, troubleshooting), see [COLMAP Workflow](docs/colmap_workflow.md).
 
 For all command-line flags and defaults, see [CLI Reference](docs/cli_reference.md).
