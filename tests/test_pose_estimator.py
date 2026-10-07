@@ -1,5 +1,6 @@
 import numpy as np
 import pytest
+from scipy.spatial.transform import Rotation
 
 from tests.conftest import T0, make_frames, make_imu
 from yuv_sensor.data_loader import TimestampDomainError
@@ -76,3 +77,56 @@ def test_trajectory_has_one_entry_per_frame_with_quaternion():
     traj = PoseEstimator().estimate_trajectory(make_imu(), frames)
     assert list(traj.keys()) == list(frames.index)
     assert all(p["quaternion"].shape == (4,) for p in traj.values())
+
+
+class TestImuToCameraTrajectory:
+    @staticmethod
+    def _traj(r_wi, p_wi):
+        return {0: {"timestamp_ns": 1, "position": np.asarray(p_wi, float),
+                    "rotation_matrix": np.asarray(r_wi, float), "quaternion": None}}
+
+    @staticmethod
+    def _t_cam_imu(r_ci, t_ci):
+        t = np.eye(4)
+        t[:3, :3], t[:3, 3] = r_ci, t_ci
+        return t
+
+    def test_identity_extrinsics_keep_imu_pose(self):
+        from yuv_sensor.pose_estimator import imu_to_camera_trajectory
+        r = Rotation.from_euler("xyz", [10, 20, 30], degrees=True).as_matrix()
+        cam = imu_to_camera_trajectory(self._traj(r, [1, 2, 3]), np.eye(4))[0]
+        np.testing.assert_allclose(cam["rotation_matrix"], r)
+        np.testing.assert_allclose(cam["position"], [1, 2, 3])
+
+    def test_camera_pose_composes_with_extrinsics(self):
+        from yuv_sensor.pose_estimator import imu_to_camera_trajectory
+        r_wi = Rotation.from_euler("z", 90, degrees=True).as_matrix()
+        r_ci = Rotation.from_euler("x", 90, degrees=True).as_matrix()
+        t_ci = np.array([0.1, 0.0, 0.0])
+        cam = imu_to_camera_trajectory(self._traj(r_wi, [1, 0, 0]), self._t_cam_imu(r_ci, t_ci))[0]
+
+        r_ic = r_ci.T
+        np.testing.assert_allclose(cam["rotation_matrix"], r_wi @ r_ic)
+        # a point at the camera origin in the IMU frame is t_ic, in world R_wi @ t_ic + p
+        np.testing.assert_allclose(cam["position"], np.array([1, 0, 0]) + r_wi @ (-r_ic @ t_ci))
+        # round trip: IMU origin seen from the camera sits at t_ci
+        r_cw, c = cam["rotation_matrix"].T, cam["position"]
+        np.testing.assert_allclose(r_cw @ (np.array([1, 0, 0]) - c), t_ci, atol=1e-12)
+
+    def test_upright_rotation_is_applied(self):
+        from yuv_sensor.camera_calib import upright_camera_rotation
+        from yuv_sensor.pose_estimator import imu_to_camera_trajectory
+        up = upright_camera_rotation(90)
+        cam = imu_to_camera_trajectory(self._traj(np.eye(3), [0, 0, 0]), np.eye(4), up)[0]
+        np.testing.assert_allclose(cam["rotation_matrix"], up)
+        # clockwise-rotated image: upright x axis is the raw -y axis
+        np.testing.assert_allclose(up @ [1, 0, 0], [0, -1, 0], atol=1e-12)
+
+    def test_invalid_extrinsics_rejected(self):
+        from yuv_sensor.pose_estimator import imu_to_camera_trajectory
+        with pytest.raises(ValueError):
+            imu_to_camera_trajectory(self._traj(np.eye(3), [0, 0, 0]), np.eye(3))
+        bad = np.eye(4)
+        bad[0, 0] = 2.0
+        with pytest.raises(ValueError):
+            imu_to_camera_trajectory(self._traj(np.eye(3), [0, 0, 0]), bad)

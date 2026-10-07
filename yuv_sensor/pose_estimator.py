@@ -223,3 +223,70 @@ class PoseEstimator:
                 pose_data["quaternion"]
             ))
         return poses
+
+
+def validate_t_cam_imu(t_cam_imu: np.ndarray) -> np.ndarray:
+    """Check that t_cam_imu is a rigid 4x4 transform and return it as float64.
+
+    Raises:
+        ValueError: If the shape, bottom row or rotation block is not rigid.
+    """
+    t = np.asarray(t_cam_imu, dtype=np.float64)
+    if t.shape != (4, 4):
+        raise ValueError(f"T_cam_imu must be 4x4, got shape {t.shape}")
+    if not np.allclose(t[3], [0, 0, 0, 1]):
+        raise ValueError("T_cam_imu bottom row must be [0, 0, 0, 1]")
+    r = t[:3, :3]
+    if not (np.allclose(r @ r.T, np.eye(3), atol=1e-3) and np.linalg.det(r) > 0):
+        raise ValueError("T_cam_imu rotation block is not a proper rotation")
+    return t
+
+
+def imu_to_camera_trajectory(
+    trajectory: Dict,
+    t_cam_imu: np.ndarray,
+    r_raw_up: Optional[np.ndarray] = None,
+) -> Dict:
+    """Convert an IMU/body trajectory into a camera trajectory.
+
+    estimate_trajectory() tracks the IMU: position is the IMU origin in the
+    world and rotation_matrix is R_wi (IMU-to-world). With the Kalibr
+    convention x_cam = T_cam_imu @ x_imu, the camera pose is
+    R_wc = R_wi @ R_ic and C = p_wi + R_wi @ t_ic, where
+    R_ic = R_ci.T and t_ic = -R_ic @ t_ci.
+
+    Args:
+        trajectory: Output of PoseEstimator.estimate_trajectory().
+        t_cam_imu: 4x4 transform taking IMU-frame points into the raw camera
+            frame (OpenCV axes: x right, y down, z forward).
+        r_raw_up: Optional rotation from the upright camera frame of the
+            exported images to the raw camera frame (see
+            upright_camera_rotation). None keeps the raw camera frame.
+
+    Returns:
+        Dict mapping frame_index to {timestamp_ns, position (camera center),
+        rotation_matrix (camera-to-world), quaternion (xyzw)}.
+    """
+    t = validate_t_cam_imu(t_cam_imu)
+    r_ci, t_ci = t[:3, :3], t[:3, 3]
+    r_ic = r_ci.T
+    t_ic = -r_ic @ t_ci
+    if r_raw_up is not None:
+        r_ic = r_ic @ r_raw_up
+
+    frame_indices = list(trajectory.keys())
+    r_wi = np.stack([trajectory[i]["rotation_matrix"] for i in frame_indices])
+    p_wi = np.stack([trajectory[i]["position"] for i in frame_indices])
+    r_wc = r_wi @ r_ic
+    centers = p_wi + np.einsum("nij,j->ni", r_wi, t_ic)
+    quats = Rotation.from_matrix(r_wc).as_quat()
+
+    return {
+        idx: {
+            "timestamp_ns": trajectory[idx]["timestamp_ns"],
+            "position": centers[n],
+            "rotation_matrix": r_wc[n],
+            "quaternion": quats[n],
+        }
+        for n, idx in enumerate(frame_indices)
+    }

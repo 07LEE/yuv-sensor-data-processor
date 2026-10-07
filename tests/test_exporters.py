@@ -119,3 +119,47 @@ class TestColmapCameras:
         assert tuple(parts[2:4]) == ("3000", "4000")
         assert float(parts[6]) == pytest.approx(1500.0)  # cx at image center
         assert float(parts[7]) == pytest.approx(2000.0)
+
+
+class TestColmapPoses:
+    @staticmethod
+    def _export(loader, tmp_path, **kwargs):
+        return ColmapExporter(loader).export_to_directory(tmp_path, extract_images=False, **kwargs)
+
+    def test_without_extrinsics_images_txt_is_not_written(self, make_session, tmp_path):
+        result = self._export(make_session(), tmp_path)
+        assert result["images_txt"] is None
+        assert not (tmp_path / "images.txt").exists()
+
+    def test_stale_images_txt_is_removed(self, make_session, tmp_path):
+        (tmp_path / "images.txt").write_text("stale")
+        self._export(make_session(), tmp_path)
+        assert not (tmp_path / "images.txt").exists()
+
+    def test_without_extrinsics_priors_are_labelled_imu(self, make_session, tmp_path):
+        import json
+        result = self._export(make_session(), tmp_path)
+        priors = json.loads(result["pose_priors_json"].read_text())
+        assert priors["pose_frame"] == "imu_body"
+        assert priors["camera_poses_included"] is False
+        assert "camera_position" not in priors["frames"][0]
+
+    def test_with_extrinsics_images_txt_holds_camera_poses(self, make_session, tmp_path):
+        import json
+        t = np.eye(4)
+        t[:3, 3] = [0.0, 0.0, -0.2]  # IMU origin sits 0.2 m behind the camera along its z
+        result = self._export(make_session(), tmp_path, t_cam_imu=t)
+
+        rows = [l.split() for l in result["images_txt"].read_text().splitlines()
+                if l and not l.startswith("#")]
+        assert len(rows) == 10
+        # stationary device, identity rotation: T = -R_cw @ C = -C, C = p + t_ic = (0, 0, 0.2)
+        np.testing.assert_allclose([float(v) for v in rows[0][5:8]], [0.0, 0.0, -0.2], atol=1e-5)
+
+        priors = json.loads(result["pose_priors_json"].read_text())
+        assert priors["camera_poses_included"] is True
+        np.testing.assert_allclose(priors["frames"][0]["camera_position"], [0.0, 0.0, 0.2], atol=1e-5)
+
+    def test_invalid_extrinsics_raise(self, make_session, tmp_path):
+        with pytest.raises(ValueError):
+            self._export(make_session(), tmp_path, t_cam_imu=np.eye(3))

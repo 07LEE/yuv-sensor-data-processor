@@ -382,7 +382,7 @@ exporter = ColmapExporter(loader)
 
 ### Methods
 
-#### `export_to_directory(output_dir: Path, extract_images: bool = True, undistort: bool = False, image_format: str = "jpg", image_quality: int = 92, min_sharpness: Optional[float] = None, require_converged: bool = False) -> Dict[str, Path]`
+#### `export_to_directory(output_dir: Path, extract_images: bool = True, undistort: bool = False, image_format: str = "jpg", image_quality: int = 92, min_sharpness: Optional[float] = None, require_converged: bool = False, t_cam_imu: Optional[np.ndarray] = None) -> Dict[str, Optional[Path]]`
 
 Exports all data to COLMAP workspace.
 
@@ -395,10 +395,11 @@ Args:
 - `image_quality` (int): JPEG quality 1-100 (default: 92)
 - `min_sharpness` (float, optional): Exclude frames with frames.csv `sharpness` below this from `images/`, `images.txt`, and `pose_priors.json`. `frame_quality_report.json` is always written regardless. Default `None` excludes nothing — see [Frame Quality Filtering](#frame-quality-filtering)
 - `require_converged` (bool): Also exclude frames whose nearest capture.csv row has `ae_state`/`awb_state` outside `{CONVERGED, LOCKED}` (default: False)
+- `t_cam_imu` (np.ndarray, optional): 4x4 camera-IMU extrinsic in Kalibr's convention (`x_cam = T_cam_imu @ x_imu`, raw sensor camera frame, OpenCV axes), e.g. `T_cam_imu` from `camchain-imucam.yaml`. The integrated trajectory is an IMU/body trajectory, so it is only turned into camera poses with this. Without it `images.txt` is not written (`images_txt` is `None`, and a stale `images.txt` in `output_dir` is removed). Raises `ValueError` if it is not a rigid 4x4 transform
 
 Returns:
 
-- `Dict[str, Path]`:
+- `Dict[str, Optional[Path]]`:
 
   ```python
   {
@@ -414,8 +415,8 @@ Returns:
 Generated Files:
 
 - `cameras.txt`: Camera intrinsics (PINHOLE model) for the exported upright images, reference only. Intrinsics are scaled from `pre_correction_active_array` to the frame resolution and rotated for `sensor_orientation` (width/height swap and fx/fy, cx/cy transform for 90/270)
-- `images.txt`: Reference only. COLMAP format (IMAGE_ID, QW, QX, QY, QZ, TX, TY, TZ, CAMERA_ID, NAME) — only frames that pass the quality filter (IMAGE_ID keeps `frame_idx + 1`, so gaps from excluded frames are expected and fine)
-- `pose_priors.json`: IMU trajectory (reference only), same filtered frame set as `images.txt`
+- `images.txt`: Reference only, written only when `t_cam_imu` is given. Camera poses derived from the IMU trajectory (`R_wc = R_wi @ R_ic`, `C = p_wi + R_wi @ t_ic`) and rotated into the upright image frame for `sensor_orientation`. COLMAP format (IMAGE_ID, QW, QX, QY, QZ, TX, TY, TZ, CAMERA_ID, NAME) — only frames that pass the quality filter (IMAGE_ID keeps `frame_idx + 1`, so gaps from excluded frames are expected and fine)
+- `pose_priors.json`: IMU trajectory (reference only), same filtered frame set as `images.txt`. `position`/`quaternion_xyzw`/`velocity` are always the IMU body pose (`"pose_frame": "imu_body"`); with `t_cam_imu`, `camera_position` and `camera_quaternion_xyzw` (camera-to-world) are added per frame
 - `colmap_export_metadata.json`: Export metadata and COLMAP commands
 - `frame_quality_report.json`: Per-frame sharpness/ae_state/awb_state/af_state and which frames were excluded and why
 - `images/`: Extracted RGB frames (filtered)

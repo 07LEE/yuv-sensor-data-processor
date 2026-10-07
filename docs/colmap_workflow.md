@@ -11,7 +11,7 @@ Mobile Scan Data
     ↓
 YUV Frames + IMU Logs (SessionDataLoader)
     ↓
-Estimate Camera Trajectory (PoseEstimator)
+Estimate IMU Trajectory (PoseEstimator) -> camera poses via T_cam_imu
     ↓
 Export COLMAP Format (ColmapExporter)
     ├─ images/ (RGB frames)            ← read by COLMAP
@@ -64,10 +64,28 @@ This generates:
 
 - `output/colmap/images/` — RGB frames (named by timestamp)
 - `output/colmap/cameras.txt` — Camera intrinsics (PINHOLE model) matching the exported upright images, reference only
-- `output/colmap/images.txt` — Image list with IMU-estimated poses, reference only
-- `output/colmap/pose_priors.json` — IMU trajectory, reference only
+- `output/colmap/images.txt` — Image list with camera poses derived from the IMU trajectory, reference only; written only with `--camera_imu_extrinsics` (see below)
+- `output/colmap/pose_priors.json` — IMU trajectory (IMU body frame), reference only
 - `output/colmap/colmap_export_metadata.json` — Export metadata
 - `output/colmap/frame_quality_report.json` — Per-frame sharpness and exposure/white-balance convergence state, always written (see below)
+
+### Camera-IMU extrinsics and `images.txt`
+
+The integrated trajectory is the pose of the IMU, not of the camera. Writing it as a camera pose is only correct if the two frames coincide, so `images.txt` is written only when you pass the camera-IMU extrinsic:
+
+```bash
+yuv-sensor --session_dir data/session_419864820 \
+           --export_colmap \
+           --camera_imu_extrinsics extrinsics.json
+```
+
+`extrinsics.json` holds Kalibr's `T_cam_imu` (from `camchain-imucam.yaml`, see [Kalibr Workflow](kalibr_workflow.md)) as a 4x4 matrix, with `x_cam = T_cam_imu @ x_imu`:
+
+```json
+{"T_cam_imu": [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]]}
+```
+
+The extrinsic is calibrated on the raw sensor frame; the exporter rotates it for `sensor_orientation` so the poses match the upright `images/`. Without `--camera_imu_extrinsics`, `images.txt` is not written (and one left by an earlier run is removed), and `pose_priors.json` carries the IMU body pose, labelled `"pose_frame": "imu_body"`.
 
 ### Optional: filter out blurry / not-yet-converged frames first
 

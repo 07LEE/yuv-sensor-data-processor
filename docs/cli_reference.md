@@ -20,6 +20,9 @@ Options:
                                   standalone actions)
   --export_colmap                Standalone action: export in COLMAP format with IMU-estimated reference poses
   --colmap_output_dir STR        Output directory for COLMAP workspace (default: session_dir/colmap)
+  --camera_imu_extrinsics STR    JSON file with a 4x4 "T_cam_imu" (Kalibr convention). Required for
+                                  --export_colmap to write images.txt camera poses; without it only
+                                  IMU-frame poses go to pose_priors.json
   --export_kalibr                Standalone action: export Kalibr camera-IMU calibration input
                                   (cam0/ + imu0.csv + camchain.yaml)
   --kalibr_output_dir STR        Output directory for Kalibr export (default: session_dir/kalibr)

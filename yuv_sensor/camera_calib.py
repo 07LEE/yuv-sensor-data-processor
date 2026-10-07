@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import Dict, Any, Optional, Sequence, Tuple
 import numpy as np
 import cv2
+from scipy.spatial.transform import Rotation
 
 
 @dataclass(frozen=True)
@@ -84,6 +85,24 @@ def upright_camera_geometry(
     if orientation == 270:
         return CameraGeometry(h, w, fy, fx, cy, w - cx, k1, k2, k3, -p2, p1)
     raise ValueError(f"sensor_orientation must be 0, 90, 180 or 270, got {sensor_orientation}")
+
+
+def upright_camera_rotation(sensor_orientation: int = 0) -> np.ndarray:
+    """Rotation R_raw_up taking upright-camera axes to raw-camera axes.
+
+    Exported images are the raw frame rotated clockwise by sensor_orientation,
+    i.e. the camera frame is rotated about the optical axis by
+    -sensor_orientation. Extrinsics calibrated on the raw sensor frame
+    therefore need R_world_up = R_world_raw @ R_raw_up to describe the
+    cameras of the exported images.
+
+    Raises:
+        ValueError: If sensor_orientation is not 0, 90, 180 or 270.
+    """
+    orientation = int(sensor_orientation) % 360
+    if orientation not in (0, 90, 180, 270):
+        raise ValueError(f"sensor_orientation must be 0, 90, 180 or 270, got {sensor_orientation}")
+    return Rotation.from_euler("z", -orientation, degrees=True).as_matrix()
 
 
 class CameraCalibration:
