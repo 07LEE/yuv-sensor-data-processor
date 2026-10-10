@@ -309,6 +309,7 @@ If dataset is large (> 1000 images):
 The mapper writes binary models, so convert them to text first:
 
 ```bash
+mkdir -p sparse/0_txt
 colmap model_converter \
     --input_path sparse/0 \
     --output_path sparse/0_txt \

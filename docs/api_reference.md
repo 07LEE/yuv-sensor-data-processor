@@ -405,7 +405,7 @@ Returns:
   ```python
   {
     "cameras_txt": Path("output/cameras.txt"),
-    "images_txt": Path("output/images.txt"),  # None without t_cam_imu
+    "images_txt": None,  # Path("output/images.txt") when t_cam_imu is given
     "pose_priors_json": Path("output/pose_priors.json"),
     "metadata_json": Path("output/colmap_export_metadata.json"),
     "quality_report_json": Path("output/frame_quality_report.json"),
