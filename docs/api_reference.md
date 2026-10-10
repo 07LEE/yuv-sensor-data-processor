@@ -395,7 +395,7 @@ Args:
 - `image_quality` (int): JPEG quality 1-100 (default: 92)
 - `min_sharpness` (float, optional): Exclude frames with frames.csv `sharpness` below this from `images/`, `images.txt`, and `pose_priors.json`. `frame_quality_report.json` is always written regardless. Default `None` excludes nothing — see [Frame Quality Filtering](#frame-quality-filtering)
 - `require_converged` (bool): Also exclude frames whose nearest capture.csv row has `ae_state`/`awb_state` outside `{CONVERGED, LOCKED}` (default: False)
-- `t_cam_imu` (np.ndarray, optional): 4x4 camera-IMU extrinsic in Kalibr's convention (`x_cam = T_cam_imu @ x_imu`, raw sensor camera frame, OpenCV axes), e.g. `T_cam_imu` from `camchain-imucam.yaml`. The integrated trajectory is an IMU/body trajectory, so it is only turned into camera poses with this. Without it `images.txt` is not written (`images_txt` is `None`, and a stale `images.txt` in `output_dir` is removed). Raises `ValueError` if it is not a rigid 4x4 transform
+- `t_cam_imu` (np.ndarray, optional): 4x4 camera-IMU extrinsic in Kalibr's convention (`x_cam = T_cam_imu @ x_imu`, raw sensor camera frame, OpenCV axes). The integrated trajectory is an IMU/body trajectory, so it is only turned into camera poses with this. Without it `images.txt` is not written (`images_txt` is `None`, and a stale `images.txt` in `output_dir` is removed). Raises `ValueError` if it is not a rigid 4x4 transform
 
 Returns:
 

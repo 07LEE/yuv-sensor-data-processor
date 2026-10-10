@@ -11,12 +11,12 @@ Mobile Scan Data
     ↓
 YUV Frames + IMU Logs (SessionDataLoader)
     ↓
-Estimate IMU Trajectory (PoseEstimator) -> camera poses via T_cam_imu
+Estimate IMU Trajectory (PoseEstimator) -> camera poses (only with T_cam_imu)
     ↓
 Export COLMAP Format (ColmapExporter)
     ├─ images/ (RGB frames)            ← read by COLMAP
     ├─ cameras.txt (intrinsics)        ← reference, not read by the steps below
-    ├─ images.txt (IMU-estimated poses) ← reference, not read by the steps below
+    ├─ images.txt (camera poses, only with T_cam_imu) ← reference, not read by the steps below
     └─ pose_priors.json (IMU trajectory) ← reference, not read by the steps below
     ↓
 COLMAP: Feature Extraction & Matching (images/ only)
@@ -65,7 +65,7 @@ This generates:
 - `output/colmap/images/` — RGB frames (named by timestamp)
 - `output/colmap/cameras.txt` — Camera intrinsics (PINHOLE model) matching the exported upright images, reference only
 - `output/colmap/images.txt` — Image list with camera poses derived from the IMU trajectory, reference only; written only with `--camera_imu_extrinsics` (see below)
-- `output/colmap/pose_priors.json` — IMU trajectory (IMU body frame), reference only
+- `output/colmap/pose_priors.json` — IMU trajectory (IMU body frame), reference only; with `--camera_imu_extrinsics` each frame also gets `camera_position` and `camera_quaternion_xyzw` (camera-to-world), and `camera_poses_included` is `true`
 - `output/colmap/colmap_export_metadata.json` — Export metadata
 - `output/colmap/frame_quality_report.json` — Per-frame sharpness and exposure/white-balance convergence state, always written (see below)
 
@@ -79,13 +79,27 @@ yuv-sensor --session_dir data/session_419864820 \
            --camera_imu_extrinsics extrinsics.json
 ```
 
-`extrinsics.json` holds Kalibr's `T_cam_imu` (from `camchain-imucam.yaml`, see [Kalibr Workflow](kalibr_workflow.md)) as a 4x4 matrix, with `x_cam = T_cam_imu @ x_imu`:
+`extrinsics.json` holds a 4x4 `T_cam_imu` matrix, with `x_cam = T_cam_imu @ x_imu`:
 
 ```json
 {"T_cam_imu": [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]]}
 ```
 
 The extrinsic is calibrated on the raw sensor frame; the exporter rotates it for `sensor_orientation` so the poses match the upright `images/`. Without `--camera_imu_extrinsics`, `images.txt` is not written (and one left by an earlier run is removed), and `pose_priors.json` carries the IMU body pose, labelled `"pose_frame": "imu_body"`.
+
+#### Using a Kalibr result
+
+`T_cam_imu` from this repo's [Kalibr Workflow](kalibr_workflow.md) is in the upright frame (`cam0/` holds upright images), so passing it as is rotates twice unless `sensor_orientation` is 0. Convert it first:
+
+```python
+import numpy as np
+
+from yuv_sensor.camera_calib import upright_camera_rotation
+
+t_raw_up = np.eye(4)  # pure rotation, no translation
+t_raw_up[:3, :3] = upright_camera_rotation(sensor_orientation)  # from session.json
+t_cam_imu = t_raw_up @ t_up_imu  # t_up_imu: cam0 T_cam_imu from camchain-imucam.yaml
+```
 
 ### Optional: filter out blurry / not-yet-converged frames first
 
@@ -105,16 +119,21 @@ yuv-sensor --session_dir data/session_419864820 \
 
 ```python
 from yuv_sensor import SessionDataLoader, ColmapExporter
+from yuv_sensor.io_utils import load_t_cam_imu
 
 loader = SessionDataLoader("data/session_419864820")
 exporter = ColmapExporter(loader)
+
+# raw sensor frame T_cam_imu; without it images.txt is not written
+t_cam_imu = load_t_cam_imu("extrinsics.json")
 
 result = exporter.export_to_directory(
     output_dir="output/colmap",
     extract_images=True,
     undistort=True,
     image_format="jpg",
-    image_quality=92
+    image_quality=92,
+    t_cam_imu=t_cam_imu,
 )
 
 print(f"Exported to: {result['images_dir']}")
