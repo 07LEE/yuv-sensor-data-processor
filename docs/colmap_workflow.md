@@ -91,6 +91,25 @@ The extrinsic is expected in the raw sensor frame by default; the exporter rotat
 
 `T_cam_imu` from this repo's [Kalibr Workflow](kalibr_workflow.md) is in the upright frame (`cam0/` holds upright images), not the raw sensor frame. Pass `--camera_imu_extrinsics_frame upright` (`t_cam_imu_frame="upright"` in Python). Without it the matrix is read as raw and rotated a second time unless `sensor_orientation` is 0.
 
+`--camera_imu_extrinsics` reads JSON, not the YAML Kalibr writes, so extract `cam0.T_cam_imu` first (PyYAML is not a yuv_sensor dependency: `pip install pyyaml`):
+
+```python
+import json
+import yaml
+
+with open("camchain-imucam.yaml") as f:
+    t_cam_imu = yaml.safe_load(f)["cam0"]["T_cam_imu"]
+with open("extrinsics.json", "w") as f:
+    json.dump({"T_cam_imu": t_cam_imu}, f)
+```
+
+```bash
+yuv-sensor --session_dir data/session_419864820 \
+           --export_colmap \
+           --camera_imu_extrinsics extrinsics.json \
+           --camera_imu_extrinsics_frame upright
+```
+
 ### Optional: filter out blurry / not-yet-converged frames first
 
 `frame_quality_report.json` above is generated either way, so you can inspect it before deciding whether to filter anything. If you do want to exclude frames, add:
@@ -199,9 +218,11 @@ Parameters:
 Expected output:
 
 - `sparse/0/` — Model directory with:
-  - `images.txt` — Refined camera poses (world-to-camera, quaternion in QW QX QY QZ order)
-  - `points3D.txt` — 3D point cloud
-  - `cameras.txt` — Refined intrinsics
+  - `images.bin` — Refined camera poses (world-to-camera, quaternion in QW QX QY QZ order)
+  - `points3D.bin` — 3D point cloud
+  - `cameras.bin` — Refined intrinsics
+
+The mapper writes binary models. Convert them to text to read them, see [Verifying Output](#verifying-output).
 
 Runtime: Depends on image count. ~10-30s for 100-500 images on modern hardware.
 
@@ -285,20 +306,31 @@ If dataset is large (> 1000 images):
 
 ### Check reconstruction quality
 
-```python
-import json
+The mapper writes binary models, so convert them to text first:
 
-# Read camera poses
-with open("sparse/0/images.txt") as f:
-    for line in f:
-        if line.startswith("#"): continue
-        parts = line.split()
-        if len(parts) >= 10:
-            image_id, qw, qx, qy, qz, tx, ty, tz, camera_id, name = parts[:10]
-            print(f"{name}: pos=({tx}, {ty}, {tz})")
+```bash
+colmap model_converter \
+    --input_path sparse/0 \
+    --output_path sparse/0_txt \
+    --output_type TXT
+```
+
+```python
+import numpy as np
+from scipy.spatial.transform import Rotation
+
+# Read camera poses. TX, TY, TZ are the world-to-camera translation t,
+# so the camera center is C = -R^T t. Every second line is POINTS2D.
+with open("sparse/0_txt/images.txt") as f:
+    rows = [line.split() for line in f if not line.startswith("#")]
+for parts in rows[::2]:
+    image_id, qw, qx, qy, qz, tx, ty, tz, camera_id, name = parts[:10]
+    r_cw = Rotation.from_quat([float(qx), float(qy), float(qz), float(qw)]).as_matrix()
+    c = -r_cw.T @ np.array([float(tx), float(ty), float(tz)])
+    print(f"{name}: pos=({c[0]:.3f}, {c[1]:.3f}, {c[2]:.3f})")
 
 # Read point cloud stats
-with open("sparse/0/points3D.txt") as f:
+with open("sparse/0_txt/points3D.txt") as f:
     points = [l for l in f if not l.startswith("#")]
     print(f"Total 3D points: {len(points)}")
 ```

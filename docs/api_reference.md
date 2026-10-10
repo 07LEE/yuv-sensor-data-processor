@@ -405,7 +405,7 @@ Returns:
   ```python
   {
     "cameras_txt": Path("output/cameras.txt"),
-    "images_txt": Path("output/images.txt"),
+    "images_txt": Path("output/images.txt"),  # None without t_cam_imu
     "pose_priors_json": Path("output/pose_priors.json"),
     "metadata_json": Path("output/colmap_export_metadata.json"),
     "quality_report_json": Path("output/frame_quality_report.json"),
@@ -417,7 +417,7 @@ Generated Files:
 
 - `cameras.txt`: Camera intrinsics (PINHOLE model) for the exported upright images, reference only. Intrinsics are scaled from `pre_correction_active_array` to the frame resolution and rotated for `sensor_orientation` (width/height swap and fx/fy, cx/cy transform for 90/270)
 - `images.txt`: Reference only, written only when `t_cam_imu` is given. Camera poses derived from the IMU trajectory (`R_wc = R_wi @ R_ic`, `C = p_wi + R_wi @ t_ic`) and rotated into the upright image frame for `sensor_orientation`. COLMAP format (IMAGE_ID, QW, QX, QY, QZ, TX, TY, TZ, CAMERA_ID, NAME) — only frames that pass the quality filter (IMAGE_ID keeps `frame_idx + 1`, so gaps from excluded frames are expected and fine)
-- `pose_priors.json`: IMU trajectory (reference only), same filtered frame set as `images.txt`. `position`/`quaternion_xyzw`/`velocity` are always the IMU body pose (`"pose_frame": "imu_body"`); with `t_cam_imu`, `camera_position` and `camera_quaternion_xyzw` (camera-to-world) are added per frame
+- `pose_priors.json`: IMU trajectory (reference only), same filtered frame set as `images/`. `position`/`quaternion_xyzw`/`velocity` are always the IMU body pose (`"pose_frame": "imu_body"`); with `t_cam_imu`, `camera_position` and `camera_quaternion_xyzw` (camera-to-world) are added per frame
 - `colmap_export_metadata.json`: Export metadata and COLMAP commands
 - `frame_quality_report.json`: Per-frame sharpness/ae_state/awb_state/af_state and which frames were excluded and why
 - `images/`: Extracted RGB frames (filtered)
