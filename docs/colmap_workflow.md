@@ -6,17 +6,17 @@ End-to-end guide for preparing mobile scan data for 3D reconstruction using COLM
 
 The workflow exports mobile sensor data (images + IMU) in COLMAP format and runs COLMAP's structure-from-motion pipeline on the images:
 
-```
+```text
 Mobile Scan Data
     ↓
 YUV Frames + IMU Logs (SessionDataLoader)
     ↓
-Estimate IMU Trajectory (PoseEstimator) -> camera poses via T_cam_imu
+Estimate IMU Trajectory (PoseEstimator) -> camera poses (only with T_cam_imu)
     ↓
 Export COLMAP Format (ColmapExporter)
     ├─ images/ (RGB frames)            ← read by COLMAP
     ├─ cameras.txt (intrinsics)        ← reference, not read by the steps below
-    ├─ images.txt (IMU-estimated poses) ← reference, not read by the steps below
+    ├─ images.txt (camera poses, only with T_cam_imu) ← reference, not read by the steps below
     └─ pose_priors.json (IMU trajectory) ← reference, not read by the steps below
     ↓
 COLMAP: Feature Extraction & Matching (images/ only)
@@ -65,7 +65,7 @@ This generates:
 - `output/colmap/images/` — RGB frames (named by timestamp)
 - `output/colmap/cameras.txt` — Camera intrinsics (PINHOLE model) matching the exported upright images, reference only
 - `output/colmap/images.txt` — Image list with camera poses derived from the IMU trajectory, reference only; written only with `--camera_imu_extrinsics` (see below)
-- `output/colmap/pose_priors.json` — IMU trajectory (IMU body frame), reference only
+- `output/colmap/pose_priors.json` — IMU trajectory (IMU body frame), reference only; with `--camera_imu_extrinsics` each frame also gets `camera_position` and `camera_quaternion_xyzw` (camera-to-world), and `camera_poses_included` is `true`
 - `output/colmap/colmap_export_metadata.json` — Export metadata
 - `output/colmap/frame_quality_report.json` — Per-frame sharpness and exposure/white-balance convergence state, always written (see below)
 
@@ -79,13 +79,36 @@ yuv-sensor --session_dir data/session_419864820 \
            --camera_imu_extrinsics extrinsics.json
 ```
 
-`extrinsics.json` holds Kalibr's `T_cam_imu` (from `camchain-imucam.yaml`, see [Kalibr Workflow](kalibr_workflow.md)) as a 4x4 matrix, with `x_cam = T_cam_imu @ x_imu`:
+`extrinsics.json` holds a 4x4 `T_cam_imu` matrix, with `x_cam = T_cam_imu @ x_imu`:
 
 ```json
 {"T_cam_imu": [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]]}
 ```
 
-The extrinsic is calibrated on the raw sensor frame; the exporter rotates it for `sensor_orientation` so the poses match the upright `images/`. Without `--camera_imu_extrinsics`, `images.txt` is not written (and one left by an earlier run is removed), and `pose_priors.json` carries the IMU body pose, labelled `"pose_frame": "imu_body"`.
+The extrinsic is expected in the raw sensor frame by default; the exporter rotates it for `sensor_orientation` so the poses match the upright `images/`. Without `--camera_imu_extrinsics`, `images.txt` is not written (and one left by an earlier run is removed), and `pose_priors.json` carries the IMU body pose, labelled `"pose_frame": "imu_body"`.
+
+#### Using a Kalibr result
+
+`T_cam_imu` from this repo's [Kalibr Workflow](kalibr_workflow.md) is in the upright frame (`cam0/` holds upright images), not the raw sensor frame. Pass `--camera_imu_extrinsics_frame upright` (`t_cam_imu_frame="upright"` in Python). Without it the matrix is read as raw and rotated a second time unless `sensor_orientation` is 0.
+
+`--camera_imu_extrinsics` reads JSON, not the YAML Kalibr writes, so extract `cam0.T_cam_imu` first (PyYAML is not a yuv_sensor dependency: `pip install pyyaml`):
+
+```python
+import json
+import yaml
+
+with open("camchain-imucam.yaml") as f:
+    t_cam_imu = yaml.safe_load(f)["cam0"]["T_cam_imu"]
+with open("extrinsics.json", "w") as f:
+    json.dump({"T_cam_imu": t_cam_imu}, f)
+```
+
+```bash
+yuv-sensor --session_dir data/session_419864820 \
+           --export_colmap \
+           --camera_imu_extrinsics extrinsics.json \
+           --camera_imu_extrinsics_frame upright
+```
 
 ### Optional: filter out blurry / not-yet-converged frames first
 
@@ -105,16 +128,21 @@ yuv-sensor --session_dir data/session_419864820 \
 
 ```python
 from yuv_sensor import SessionDataLoader, ColmapExporter
+from yuv_sensor.io_utils import load_t_cam_imu
 
 loader = SessionDataLoader("data/session_419864820")
 exporter = ColmapExporter(loader)
+
+# raw sensor frame T_cam_imu; without it images.txt is not written
+t_cam_imu = load_t_cam_imu("extrinsics.json")
 
 result = exporter.export_to_directory(
     output_dir="output/colmap",
     extract_images=True,
     undistort=True,
     image_format="jpg",
-    image_quality=92
+    image_quality=92,
+    t_cam_imu=t_cam_imu,
 )
 
 print(f"Exported to: {result['images_dir']}")
@@ -190,9 +218,11 @@ Parameters:
 Expected output:
 
 - `sparse/0/` — Model directory with:
-  - `images.txt` — Refined camera poses (xyzw quaternion format)
-  - `points3D.txt` — 3D point cloud
-  - `cameras.txt` — Refined intrinsics
+  - `images.bin` — Refined camera poses (world-to-camera, quaternion in QW QX QY QZ order)
+  - `points3D.bin` — 3D point cloud
+  - `cameras.bin` — Refined intrinsics
+
+The mapper writes binary models. Convert them to text to read them, see [Verifying Output](#verifying-output).
 
 Runtime: Depends on image count. ~10-30s for 100-500 images on modern hardware.
 
@@ -276,20 +306,32 @@ If dataset is large (> 1000 images):
 
 ### Check reconstruction quality
 
-```python
-import json
+The mapper writes binary models, so convert them to text first:
 
-# Read camera poses
-with open("sparse/0/images.txt") as f:
-    for line in f:
-        if line.startswith("#"): continue
-        parts = line.split()
-        if len(parts) >= 10:
-            image_id, qw, qx, qy, qz, tx, ty, tz, camera_id, name = parts[:10]
-            print(f"{name}: pos=({tx}, {ty}, {tz})")
+```bash
+mkdir -p sparse/0_txt
+colmap model_converter \
+    --input_path sparse/0 \
+    --output_path sparse/0_txt \
+    --output_type TXT
+```
+
+```python
+import numpy as np
+from scipy.spatial.transform import Rotation
+
+# Read camera poses. TX, TY, TZ are the world-to-camera translation t,
+# so the camera center is C = -R^T t. Every second line is POINTS2D.
+with open("sparse/0_txt/images.txt") as f:
+    rows = [line.split() for line in f if not line.startswith("#")]
+for parts in rows[::2]:
+    image_id, qw, qx, qy, qz, tx, ty, tz, camera_id, name = parts[:10]
+    r_cw = Rotation.from_quat([float(qx), float(qy), float(qz), float(qw)]).as_matrix()
+    c = -r_cw.T @ np.array([float(tx), float(ty), float(tz)])
+    print(f"{name}: pos=({c[0]:.3f}, {c[1]:.3f}, {c[2]:.3f})")
 
 # Read point cloud stats
-with open("sparse/0/points3D.txt") as f:
+with open("sparse/0_txt/points3D.txt") as f:
     points = [l for l in f if not l.startswith("#")]
     print(f"Total 3D points: {len(points)}")
 ```

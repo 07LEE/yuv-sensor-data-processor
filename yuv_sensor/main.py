@@ -29,6 +29,7 @@ def main():
     parser.add_argument("--process_sync", action="store_true", default=True, help="Generate synchronized_dataset.json mapping frames to IMU and exposure data (skipped by --export_colmap/--export_kalibr/--trim_imu_static, which are standalone actions)")
     parser.add_argument("--colmap_output_dir", type=str, default=None, help="Directory for COLMAP export (defaults to session_dir/colmap)")
     parser.add_argument("--camera_imu_extrinsics", type=str, default=None, help="JSON file with a 4x4 \"T_cam_imu\" (Kalibr convention, x_cam = T_cam_imu @ x_imu). Required for --export_colmap to write images.txt camera poses; without it only IMU-frame poses go to pose_priors.json")
+    parser.add_argument("--camera_imu_extrinsics_frame", type=str, choices=["raw", "upright"], default="raw", help="Camera frame --camera_imu_extrinsics is expressed in: \"raw\" (sensor frame, default) or \"upright\" (frame of the exported images; use for T_cam_imu from this repo's Kalibr export)")
     parser.add_argument("--kalibr_output_dir", type=str, default=None, help="Directory for Kalibr export (defaults to session_dir/kalibr)")
     parser.add_argument("--imu_trim_output_dir", type=str, default=None, help="Directory for --trim_imu_static output (defaults to session_dir/imu_trimmed)")
     parser.add_argument("--checkerboard_size", type=str, default=None, help="Required by --calibrate_camera: inner-corner grid of the checkerboard as COLSxROWS, e.g. 9x6 for a 10x7-square board")
@@ -198,6 +199,7 @@ def main():
             min_sharpness=args.min_sharpness,
             require_converged=args.require_converged,
             t_cam_imu=t_cam_imu,
+            t_cam_imu_frame=args.camera_imu_extrinsics_frame,
         )
 
         print(f"\nCOLMAP export complete:")

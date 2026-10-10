@@ -47,6 +47,7 @@ class ColmapExporter:
         min_sharpness: Optional[float] = None,
         require_converged: bool = False,
         t_cam_imu: Optional[np.ndarray] = None,
+        t_cam_imu_frame: str = "raw",
     ) -> Dict[str, Optional[Path]]:
         """Export images and COLMAP format files to directory.
 
@@ -66,15 +67,22 @@ class ColmapExporter:
                 row has ae_state/awb_state outside {CONVERGED, LOCKED}
                 (exposure/white-balance still settling). Default False.
             t_cam_imu: 4x4 camera-IMU extrinsic in the Kalibr convention
-                (x_cam = T_cam_imu @ x_imu, raw sensor camera frame with
-                OpenCV axes). Required to write images.txt; None writes
-                IMU-frame poses to pose_priors.json only.
+                (x_cam = T_cam_imu @ x_imu, OpenCV axes, in the camera frame
+                given by t_cam_imu_frame). Required to write images.txt;
+                None writes IMU-frame poses to pose_priors.json only.
+            t_cam_imu_frame: Camera frame t_cam_imu is expressed in. "raw" is
+                the sensor frame session.json intrinsics refer to (default).
+                "upright" is the frame of the rotated exported images, which
+                is what Kalibr calibrates when run on this repo's Kalibr
+                export.
 
         Returns:
             Dict mapping file type to output path (cameras.txt, images.txt,
             etc.), plus quality_report_json. images_txt is None when no
             t_cam_imu was given.
         """
+        if t_cam_imu_frame not in ("raw", "upright"):
+            raise ValueError(f"t_cam_imu_frame must be 'raw' or 'upright', got {t_cam_imu_frame!r}")
         if t_cam_imu is not None:
             t_cam_imu = validate_t_cam_imu(t_cam_imu)
 
@@ -106,17 +114,20 @@ class ColmapExporter:
 
         camera_trajectory = None
         if t_cam_imu is not None:
-            camera_trajectory = imu_to_camera_trajectory(
-                trajectory,
-                t_cam_imu,
-                upright_camera_rotation(self.loader.session_config.get("sensor_orientation", 0)),
-            )
+            # A raw-frame extrinsic is rotated to the upright images/; an
+            # upright-frame one (Kalibr's, from cam0/) already describes them.
+            r_raw_up = None
+            if t_cam_imu_frame == "raw":
+                r_raw_up = upright_camera_rotation(self.loader.session_config.get("sensor_orientation", 0))
+            camera_trajectory = imu_to_camera_trajectory(trajectory, t_cam_imu, r_raw_up)
 
         # Export COLMAP format files
         cameras_txt = self._export_cameras_txt(output_dir)
         images_txt_path = output_dir / "images.txt"
         if camera_trajectory is not None:
-            images_txt = self._export_images_txt(output_dir, camera_trajectory, usable_indices)
+            images_txt = self._export_images_txt(
+                output_dir, camera_trajectory, usable_indices, image_format
+            )
         else:
             # Never leave an images.txt from an earlier run: it would present
             # IMU poses as camera poses.
@@ -198,7 +209,9 @@ class ColmapExporter:
 
         return cameras_path
 
-    def _export_images_txt(self, output_dir: Path, trajectory: Dict, usable_indices: List[int]) -> Path:
+    def _export_images_txt(
+        self, output_dir: Path, trajectory: Dict, usable_indices: List[int], image_format: str
+    ) -> Path:
         """Export images.txt in COLMAP format.
 
         Format: IMAGE_ID, QW, QX, QY, QZ, TX, TY, TZ, CAMERA_ID, IMAGE_NAME
@@ -217,7 +230,7 @@ class ColmapExporter:
         usable_set = set(usable_indices)
         frame_indices = [idx for idx in self.loader.frames_df.index if idx in usable_set]
         filenames = [
-            self.loader.frames_df.loc[idx, "filename"].replace(".yuv", ".jpg")
+            self.loader.frames_df.loc[idx, "filename"].replace(".yuv", f".{image_format}")
             for idx in frame_indices
         ]
 

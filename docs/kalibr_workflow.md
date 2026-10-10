@@ -6,7 +6,7 @@ End-to-end guide for preparing mobile scan data for camera-IMU extrinsic/intrins
 
 Kalibr's `kalibr_calibrate_imu_camera` needs three independent inputs. `yuv_sensor` produces two of them directly, and derives the third (`imu.yaml`) itself via Allan variance:
 
-```
+```text
 Static IMU-only capture (phone lying still)
     ↓
 auto_trim_static_imu (imu_trim.py)
@@ -162,5 +162,5 @@ Solutions:
 
 ## Next Steps
 
-- Feed `camchain-imucam.yaml`'s extrinsics into a downstream SLAM/VIO pipeline that fuses this camera with this IMU
+- Feed `camchain-imucam.yaml`'s extrinsics into a downstream SLAM/VIO pipeline that fuses this camera with this IMU (they are in the upright `cam0/` frame; see [COLMAP Workflow](colmap_workflow.md#using-a-kalibr-result) before using them there)
 - Re-validate calibration periodically — a phone's IMU and lens mounting can drift after drops or temperature swings
