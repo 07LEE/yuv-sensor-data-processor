@@ -160,6 +160,16 @@ class TestColmapPoses:
         assert priors["camera_poses_included"] is True
         np.testing.assert_allclose(priors["frames"][0]["camera_position"], [0.0, 0.0, 0.2], atol=1e-5)
 
+    @pytest.mark.parametrize("image_format", ["jpg", "png"])
+    def test_images_txt_names_follow_image_format(self, make_session, tmp_path, image_format):
+        loader = make_session()
+        result = self._export(loader, tmp_path, t_cam_imu=np.eye(4), image_format=image_format)
+
+        rows = [l.split() for l in result["images_txt"].read_text().splitlines()
+                if l and not l.startswith("#")]
+        expected = [name.replace(".yuv", f".{image_format}") for name in loader.frames_df["filename"]]
+        assert [r[9] for r in rows] == expected
+
     def test_invalid_extrinsics_raise(self, make_session, tmp_path):
         with pytest.raises(ValueError):
             self._export(make_session(), tmp_path, t_cam_imu=np.eye(3))

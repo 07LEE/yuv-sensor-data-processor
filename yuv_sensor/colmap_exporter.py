@@ -116,7 +116,9 @@ class ColmapExporter:
         cameras_txt = self._export_cameras_txt(output_dir)
         images_txt_path = output_dir / "images.txt"
         if camera_trajectory is not None:
-            images_txt = self._export_images_txt(output_dir, camera_trajectory, usable_indices)
+            images_txt = self._export_images_txt(
+                output_dir, camera_trajectory, usable_indices, image_format
+            )
         else:
             # Never leave an images.txt from an earlier run: it would present
             # IMU poses as camera poses.
@@ -198,7 +200,9 @@ class ColmapExporter:
 
         return cameras_path
 
-    def _export_images_txt(self, output_dir: Path, trajectory: Dict, usable_indices: List[int]) -> Path:
+    def _export_images_txt(
+        self, output_dir: Path, trajectory: Dict, usable_indices: List[int], image_format: str
+    ) -> Path:
         """Export images.txt in COLMAP format.
 
         Format: IMAGE_ID, QW, QX, QY, QZ, TX, TY, TZ, CAMERA_ID, IMAGE_NAME
@@ -217,7 +221,7 @@ class ColmapExporter:
         usable_set = set(usable_indices)
         frame_indices = [idx for idx in self.loader.frames_df.index if idx in usable_set]
         filenames = [
-            self.loader.frames_df.loc[idx, "filename"].replace(".yuv", ".jpg")
+            self.loader.frames_df.loc[idx, "filename"].replace(".yuv", f".{image_format}")
             for idx in frame_indices
         ]
 
