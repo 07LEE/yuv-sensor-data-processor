@@ -190,7 +190,7 @@ Parameters:
 Expected output:
 
 - `sparse/0/` — Model directory with:
-  - `images.txt` — Refined camera poses (xyzw quaternion format)
+  - `images.txt` — Refined camera poses (world-to-camera, quaternion in QW QX QY QZ order)
   - `points3D.txt` — 3D point cloud
   - `cameras.txt` — Refined intrinsics
 

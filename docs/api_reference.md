@@ -748,38 +748,7 @@ Note: Prefer SessionDataLoader.get_decoded_frame() which handles all parameters 
 
 ## Data Format Reference
 
-### Session Configuration (session.json)
-
-```json
-{
-  "device": "Pixel 6 Pro",
-  "intrinsics": [1440.5, 1440.5, 720.0, 540.0],
-  "distortion": [-0.1, 0.05, 0.0, 0.0],
-  "sensor_orientation": 270
-}
-```
-
-- `intrinsics`: [fx, fy, cx, cy] in pixels
-- `distortion`: [k1, k2, p1, p2] OpenCV barrel distortion coefficients
-- `sensor_orientation`: Rotation in degrees (0, 90, 180, 270)
-
-### Frames CSV
-
-```csv
-filename,width,height,timestamp_ns,chroma_layout,luma_row_stride,chroma_row_stride,chroma_pixel_stride,segment0_length,segment1_length,segment2_length,sharpness
-frame_0.yuv,1440,1080,419865219890714,420,1440,720,1,1475280,368820,368820,0.82
-```
-
-### IMU CSV
-
-```csv
-timestamp_ns,sensor,x,y,z
-419865219890000,accel,-0.05,9.81,0.02
-419865219892000,gyro,-0.01,0.02,0.0
-```
-
-- `sensor`: "accel" or "gyro"
-- Units: m/s² (accel), rad/s (gyro)
+See [Data Specification](data_spec.md) for session.json, frames.csv and imu.csv.
 
 ## Error Handling
 
