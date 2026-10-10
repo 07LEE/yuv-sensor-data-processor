@@ -6,7 +6,7 @@ End-to-end guide for preparing mobile scan data for camera-IMU extrinsic/intrins
 
 Kalibr's `kalibr_calibrate_imu_camera` needs three independent inputs. `yuv_sensor` produces two of them directly, and derives the third (`imu.yaml`) itself via Allan variance:
 
-```
+```text
 Static IMU-only capture (phone lying still)
     ↓
 auto_trim_static_imu (imu_trim.py)

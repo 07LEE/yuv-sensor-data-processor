@@ -19,7 +19,7 @@ Complete reference for the `yuv_sensor` Python package.
 
 Loads and provides access to a session's frame, IMU, and calibration data.
 
-### Constructor
+### SessionDataLoader Constructor
 
 ```python
 SessionDataLoader(session_dir: str)
@@ -54,7 +54,7 @@ print(f"Device: {loader.session_config['device']}")
 | `imu_df` | `DataFrame` | Loaded imu.csv or None (columns: timestamp_ns, sensor, x, y, z) |
 | `camera_calib` | `CameraCalibration` | Camera calibration instance for undistortion and rotation |
 
-### Methods
+### SessionDataLoader Methods
 
 #### `get_frame_count() -> int`
 
@@ -169,7 +169,7 @@ if capture is not None:
 
 Generates synchronized datasets linking frames to IMU and exposure metadata.
 
-### Constructor
+### DataProcessor Constructor
 
 ```python
 DataProcessor(loader: SessionDataLoader)
@@ -188,7 +188,7 @@ loader = SessionDataLoader("data/session_419864820")
 processor = DataProcessor(loader)
 ```
 
-### Methods
+### DataProcessor Methods
 
 #### `generate_synchronized_dataset(time_window_ms: float = 50.0) -> List[Dict]`
 
@@ -273,7 +273,7 @@ with open(sync_file) as f:
 
 Estimates camera pose trajectory from IMU accelerometer and gyroscope data.
 
-### Constructor
+### PoseEstimator Constructor
 
 ```python
 PoseEstimator(gravity_magnitude: float = 9.81)
@@ -283,7 +283,7 @@ Args:
 
 - `gravity_magnitude` (float): Magnitude of gravity (m/s²), default 9.81
 
-### Methods
+### PoseEstimator Methods
 
 #### `estimate_trajectory(imu_df: Optional[pd.DataFrame], frames_df: pd.DataFrame, initial_rotation: Optional[np.ndarray] = None) -> Dict[int, Dict]`
 
@@ -361,7 +361,7 @@ for idx, pos, quat in poses[:5]:
 
 Exports session data in COLMAP format, with IMU-estimated poses as reference data. The documented COLMAP workflow (`feature_extractor`, `sequential_matcher`, `mapper`) reads only `images/`; `cameras.txt`, `images.txt` and `pose_priors.json` are not read by it. See [COLMAP Workflow](colmap_workflow.md#what-the-exported-pose-files-are-for).
 
-### Constructor
+### ColmapExporter Constructor
 
 ```python
 ColmapExporter(loader: SessionDataLoader)
@@ -380,9 +380,9 @@ loader = SessionDataLoader("data/session_419864820")
 exporter = ColmapExporter(loader)
 ```
 
-### Methods
+### ColmapExporter Methods
 
-#### `export_to_directory(output_dir: Path, extract_images: bool = True, undistort: bool = False, image_format: str = "jpg", image_quality: int = 92, min_sharpness: Optional[float] = None, require_converged: bool = False, t_cam_imu: Optional[np.ndarray] = None) -> Dict[str, Optional[Path]]`
+#### `export_to_directory(output_dir: Path, extract_images: bool = True, undistort: bool = False, image_format: str = "jpg", image_quality: int = 92, min_sharpness: Optional[float] = None, require_converged: bool = False, t_cam_imu: Optional[np.ndarray] = None, t_cam_imu_frame: str = "raw") -> Dict[str, Optional[Path]]`
 
 Exports all data to COLMAP workspace.
 
@@ -395,7 +395,8 @@ Args:
 - `image_quality` (int): JPEG quality 1-100 (default: 92)
 - `min_sharpness` (float, optional): Exclude frames with frames.csv `sharpness` below this from `images/`, `images.txt`, and `pose_priors.json`. `frame_quality_report.json` is always written regardless. Default `None` excludes nothing — see [Frame Quality Filtering](#frame-quality-filtering)
 - `require_converged` (bool): Also exclude frames whose nearest capture.csv row has `ae_state`/`awb_state` outside `{CONVERGED, LOCKED}` (default: False)
-- `t_cam_imu` (np.ndarray, optional): 4x4 camera-IMU extrinsic in Kalibr's convention (`x_cam = T_cam_imu @ x_imu`, raw sensor camera frame, OpenCV axes). The integrated trajectory is an IMU/body trajectory, so it is only turned into camera poses with this. Without it `images.txt` is not written (`images_txt` is `None`, and a stale `images.txt` in `output_dir` is removed). Raises `ValueError` if it is not a rigid 4x4 transform
+- `t_cam_imu` (np.ndarray, optional): 4x4 camera-IMU extrinsic in Kalibr's convention (`x_cam = T_cam_imu @ x_imu`, OpenCV axes, in the frame given by `t_cam_imu_frame`). The integrated trajectory is an IMU/body trajectory, so it is only turned into camera poses with this. Without it `images.txt` is not written (`images_txt` is `None`, and a stale `images.txt` in `output_dir` is removed). Raises `ValueError` if it is not a rigid 4x4 transform
+- `t_cam_imu_frame` (str): Camera frame `t_cam_imu` is expressed in. `"raw"` (default) is the sensor frame `session.json` intrinsics refer to. `"upright"` is the frame of the exported images, which is what Kalibr calibrates when run on this repo's Kalibr export. Raises `ValueError` for any other value
 
 Returns:
 
@@ -443,7 +444,7 @@ print(f"Ready for COLMAP: cd {result['images_dir'].parent}")
 
 Exports session data as input for Kalibr's camera-IMU calibration. Unlike `ColmapExporter`, images are extracted without undistortion — Kalibr fits its own distortion model from the raw frames, and an already-undistorted image would get run through that fit a second time.
 
-### Constructor
+### KalibrExporter Constructor
 
 ```python
 KalibrExporter(loader: SessionDataLoader)
@@ -462,7 +463,7 @@ loader = SessionDataLoader("data/session_419864820")
 exporter = KalibrExporter(loader)
 ```
 
-### Methods
+### KalibrExporter Methods
 
 #### `export_to_directory(output_dir: Path, extract_images: bool = True, image_format: str = "png", max_frames: Optional[int] = None, min_sharpness: Optional[float] = None, require_converged: bool = False) -> Dict[str, Optional[Path]]`
 

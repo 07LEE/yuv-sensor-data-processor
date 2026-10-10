@@ -1,8 +1,10 @@
 import numpy as np
 import pandas as pd
 import pytest
+from scipy.spatial.transform import Rotation
 
 from tests.conftest import T0, make_frames, make_imu
+from yuv_sensor.camera_calib import upright_camera_rotation
 from yuv_sensor.colmap_exporter import ColmapExporter
 from yuv_sensor.data_loader import TimestampDomainError
 from yuv_sensor.kalibr_exporter import KalibrExporter
@@ -169,6 +171,34 @@ class TestColmapPoses:
                 if l and not l.startswith("#")]
         expected = [name.replace(".yuv", f".{image_format}") for name in loader.frames_df["filename"]]
         assert [r[9] for r in rows] == expected
+
+    @staticmethod
+    def _image_rows(result):
+        return np.array([
+            [float(v) for v in l.split()[1:8]]
+            for l in result["images_txt"].read_text().splitlines()
+            if l and not l.startswith("#")
+        ])
+
+    def test_upright_frame_extrinsics_match_converted_raw(self, make_session, tmp_path):
+        loader = make_session(config={"sensor_orientation": 90})
+        t_up = np.eye(4)
+        t_up[:3, :3] = Rotation.from_euler("xyz", [20, -35, 50], degrees=True).as_matrix()
+        t_up[:3, 3] = [0.03, -0.01, 0.07]
+        t_raw_up = np.eye(4)
+        t_raw_up[:3, :3] = upright_camera_rotation(90)
+
+        raw = self._export(loader, tmp_path / "raw", t_cam_imu=t_raw_up @ t_up)
+        upright = self._export(loader, tmp_path / "upright", t_cam_imu=t_up, t_cam_imu_frame="upright")
+        misread = self._export(loader, tmp_path / "misread", t_cam_imu=t_up)
+
+        np.testing.assert_allclose(self._image_rows(upright), self._image_rows(raw), atol=1e-5)
+        # the same matrix read as raw is rotated a second time
+        assert not np.allclose(self._image_rows(misread), self._image_rows(upright), atol=1e-3)
+
+    def test_unknown_extrinsics_frame_raises(self, make_session, tmp_path):
+        with pytest.raises(ValueError, match="t_cam_imu_frame"):
+            self._export(make_session(), tmp_path, t_cam_imu=np.eye(4), t_cam_imu_frame="camera")
 
     def test_invalid_extrinsics_raise(self, make_session, tmp_path):
         with pytest.raises(ValueError):

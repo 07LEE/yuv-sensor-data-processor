@@ -6,7 +6,7 @@ End-to-end guide for preparing mobile scan data for 3D reconstruction using COLM
 
 The workflow exports mobile sensor data (images + IMU) in COLMAP format and runs COLMAP's structure-from-motion pipeline on the images:
 
-```
+```text
 Mobile Scan Data
     ↓
 YUV Frames + IMU Logs (SessionDataLoader)
@@ -85,21 +85,11 @@ yuv-sensor --session_dir data/session_419864820 \
 {"T_cam_imu": [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]]}
 ```
 
-The extrinsic is calibrated on the raw sensor frame; the exporter rotates it for `sensor_orientation` so the poses match the upright `images/`. Without `--camera_imu_extrinsics`, `images.txt` is not written (and one left by an earlier run is removed), and `pose_priors.json` carries the IMU body pose, labelled `"pose_frame": "imu_body"`.
+The extrinsic is expected in the raw sensor frame by default; the exporter rotates it for `sensor_orientation` so the poses match the upright `images/`. Without `--camera_imu_extrinsics`, `images.txt` is not written (and one left by an earlier run is removed), and `pose_priors.json` carries the IMU body pose, labelled `"pose_frame": "imu_body"`.
 
 #### Using a Kalibr result
 
-`T_cam_imu` from this repo's [Kalibr Workflow](kalibr_workflow.md) is in the upright frame (`cam0/` holds upright images), so passing it as is rotates twice unless `sensor_orientation` is 0. Convert it first:
-
-```python
-import numpy as np
-
-from yuv_sensor.camera_calib import upright_camera_rotation
-
-t_raw_up = np.eye(4)  # pure rotation, no translation
-t_raw_up[:3, :3] = upright_camera_rotation(sensor_orientation)  # from session.json
-t_cam_imu = t_raw_up @ t_up_imu  # t_up_imu: cam0 T_cam_imu from camchain-imucam.yaml
-```
+`T_cam_imu` from this repo's [Kalibr Workflow](kalibr_workflow.md) is in the upright frame (`cam0/` holds upright images), not the raw sensor frame. Pass `--camera_imu_extrinsics_frame upright` (`t_cam_imu_frame="upright"` in Python). Without it the matrix is read as raw and rotated a second time unless `sensor_orientation` is 0.
 
 ### Optional: filter out blurry / not-yet-converged frames first
 
