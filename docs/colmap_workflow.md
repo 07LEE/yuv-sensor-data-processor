@@ -76,6 +76,7 @@ The integrated trajectory is the pose of the IMU, not of the camera. Writing it 
 ```bash
 yuv-sensor --session_dir data/session_419864820 \
            --export_colmap \
+           --colmap_output_dir output/colmap \
            --camera_imu_extrinsics extrinsics.json
 ```
 
@@ -106,6 +107,7 @@ with open("extrinsics_upright.json", "w") as f:
 ```bash
 yuv-sensor --session_dir data/session_419864820 \
            --export_colmap \
+           --colmap_output_dir output/colmap \
            --camera_imu_extrinsics extrinsics_upright.json \
            --camera_imu_extrinsics_frame upright
 ```
