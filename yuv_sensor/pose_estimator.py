@@ -257,11 +257,14 @@ def imu_to_camera_trajectory(
 
     Args:
         trajectory: Output of PoseEstimator.estimate_trajectory().
-        t_cam_imu: 4x4 transform taking IMU-frame points into the raw camera
-            frame (OpenCV axes: x right, y down, z forward).
+        t_cam_imu: 4x4 transform taking IMU-frame points into the supplied
+            camera frame, raw or upright (OpenCV axes: x right, y down,
+            z forward).
         r_raw_up: Optional rotation from the upright camera frame of the
             exported images to the raw camera frame (see
-            upright_camera_rotation). None keeps the raw camera frame.
+            upright_camera_rotation). Supply it only for a raw-frame
+            t_cam_imu to get upright camera poses; None keeps the
+            supplied camera frame.
 
     Returns:
         Dict mapping frame_index to {timestamp_ns, position (camera center),
