@@ -99,14 +99,14 @@ import yaml
 
 with open("camchain-imucam.yaml") as f:
     t_cam_imu = yaml.safe_load(f)["cam0"]["T_cam_imu"]
-with open("extrinsics.json", "w") as f:
+with open("extrinsics_upright.json", "w") as f:
     json.dump({"T_cam_imu": t_cam_imu}, f)
 ```
 
 ```bash
 yuv-sensor --session_dir data/session_419864820 \
            --export_colmap \
-           --camera_imu_extrinsics extrinsics.json \
+           --camera_imu_extrinsics extrinsics_upright.json \
            --camera_imu_extrinsics_frame upright
 ```
 
